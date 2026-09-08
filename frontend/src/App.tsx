@@ -68,7 +68,13 @@ const { Header, Content, Footer } = Layout;
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
 
-import { SEGMENT_TYPES, API_BASE } from './types';
+import { API_BASE } from './types';
+
+const CHART_COLORS = [
+  '#13c2c2', '#52c41a', '#1890ff', '#722ed1', '#eb2f96',
+  '#faad14', '#f5222d', '#fa8c16', '#a0d911', '#1d39c4',
+  '#08979c', '#d4380d', '#531dab', '#c41d7f', '#d48806'
+];
 
 // MENU SECTION
 const HelpPage: React.FC = () => (
@@ -390,7 +396,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortState, setSortState] = useState<{ field: string | null, order: 'asc' | 'desc' | null }>({ field: null, order: null });
-
+  const [availableTypes, setAvailableTypes] = useState<{value: string, label: string}[]>([]);
   const [currentSvg, setCurrentSvg] = useState<string | null>(null);
   const [svgPreviewVisible, setSvgPreviewVisible] = useState<boolean>(false);
 
@@ -624,22 +630,13 @@ const App: React.FC = () => {
 
   const handlePieClick = (data: any) => {
     if (!data || !data.name) return;
-    const name = data.name;
-    const mapping: Record<string, string[]> = {
-      '2 seg': ['2-segment-helis'],
-      '3 seg': ['3-segment-helis'],
-      '4 seg+': ['4-segment-helis', '5-segment-helis', '6-segment-helis'],
-      '3 way': ['3-way-junctions'],
-      '4 way': ['4-way-junctions'],
-      '5 way': ['5-way-junctions'],
-      '6 way+': ['6-way-junctions', '7-way-junctions', '8plus-junctions']
-    };
-    const types = mapping[name] || [];
+    const groupName = data.name;
+    const typesToFilter = getTypesForGroup(groupName); 
     const currentValues = form.getFieldsValue();
-    const newFilters = { ...currentValues, segment_type: types };
-    form.setFieldsValue({ segment_type: types });
+    const newFilters = { ...currentValues, segment_type: typesToFilter };
+    form.setFieldsValue({ segment_type: typesToFilter });
     onSearch(newFilters);
-    message.info(`Filtered by type: ${name}`);
+    message.info(`Filtered by type: ${groupName}`);
   };
 
   const exportToCsv = async () => {
@@ -704,25 +701,93 @@ const App: React.FC = () => {
       const response = await axios.get(`${API_BASE}/api/stats`);
       const maxVal = response.data.max_nt;
       const maxWay = response.data.max_way || 0;
+      const folders = response.data.folders || []; 
 
       setMaxNtLimit(maxVal);
       form.setFieldsValue({ nt_range: [0, maxVal] });
       setMaxWayFromStats(maxWay);
+    
+      const formatLabel = (folder: string) => {
+        if (folder === '8plus-junctions') return '8+ way Junctions';
+        
+        const segMatch = folder.match(/^(\d+)-segment/);
+        if (segMatch) {
+          const num = parseInt(segMatch[1], 10);
+          return `Helices (${num} segment${num > 1 ? 's' : ''})`;
+        }
+
+        const wayMatch = folder.match(/^(\d+)-way/);
+        if (wayMatch) {
+          return `${wayMatch[1]}-way Junctions`;
+        }
+
+        return folder; 
+      };
+
+      const types = folders
+        .map((f: string) => ({
+          value: f,
+          label: formatLabel(f),
+          isHelix: f.includes('segment'),
+          num: parseInt(f.match(/\d+/)?.[0] || '0', 10)
+        }))
+        .sort((a, b) => {
+          if (a.isHelix && !b.isHelix) return -1;
+          if (!a.isHelix && b.isHelix) return 1;
+          return a.num - b.num;
+        })
+        .map(item => ({ value: item.value, label: item.label }));
+        
+      setAvailableTypes(types);  
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
+  }; 
+  const getGroupForType = (folderName: string) => {
+    if (!folderName || folderName.includes('1-segment')) return null;
+
+    if (folderName.includes('segment')) {
+      const match = folderName.match(/^(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num === 2) return '2 seg';
+        if (num === 3) return '3 seg';
+        if (num >= 4) return '4 seg+';
+      }
+    }
+
+    if (folderName.includes('way') || folderName.includes('plus')) {
+      const match = folderName.match(/^(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num === 3) return '3 way';
+        if (num === 4) return '4 way';
+        if (num === 5) return '5 way';
+        if (num >= 6) return '6 way+';
+      }
+      if (folderName.includes('8plus') || folderName.includes('way-junction')) {
+        return '6 way+';
+      }
+    }
+    return null;
   };
+
+  const getTypesForGroup = (groupName: string) => {
+    return availableTypes
+      .map(t => t.value)
+      .filter(val => getGroupForType(val) === groupName);
+  };
+
   const prepareHistogramData = () => {
-    const types = ['2 seg', '3 seg', '4 seg+', '3 way', '4 way', '5 way', '6 way+'];
+    const typesGroups = ['2 seg', '3 seg', '4 seg+', '3 way', '4 way', '5 way', '6 way+'];
     const bins = Array.from({ length: 10 }, (_, i) => {
       const min = i * 5;
       const max = (i + 1) * 5;
-      // Ostatni przedział (45-50) obustronnie domknięty, reszta prawostronnie otwarta
       const rangeLabel = i === 9 ? `[${min}, ${max}]` : `[${min}, ${max})`;
       
       return {
         range: rangeLabel,
-        ...Object.fromEntries(types.map(t => [t, 0]))
+        ...Object.fromEntries(typesGroups.map(t => [t, 0]))
       };
     });
 
@@ -730,37 +795,14 @@ const App: React.FC = () => {
 
     searchStats.angles.forEach((item: any) => {
       const binIndex = Math.min(Math.floor(item.bin / 5), 9);
-      const f = item.folder || "";
-
-      // Skip 1-segment-helis in histogram
-      if (f.includes('1-segment')) return;
-
-      let typeKey = '';
-      if (f.includes('2-segment')) typeKey = '2 seg';
-
-      else if (f.includes('3-segment')) typeKey = '3 seg';
-      else if (f.includes('segment-helis')) typeKey = '4 seg+';
-      else if (f.includes('3-way')) typeKey = '3 way';
-      else if (f.includes('4-way')) typeKey = '4 way';
-      else if (f.includes('5-way')) typeKey = '5 way';
-      else if (f.includes('way-junction')) typeKey = '6 way+';
-
-      if (typeKey && binIndex >= 0 && binIndex < 10) {
-        bins[binIndex][typeKey] = (bins[binIndex][typeKey] as number) + item.count;
+      // Używamy naszego tłumacza zamiast sztywnej listy!
+      const groupName = getGroupForType(item.folder || "");
+      
+      if (groupName && binIndex >= 0 && binIndex < 10) {
+        bins[binIndex][groupName] = (bins[binIndex][groupName] as number) + item.count;
       }
     });
     return bins;
-  };
-
-  const TYPE_COLORS: Record<string, string> = {
-    '2 seg': '#13c2c2',
-    '3 seg': '#52c41a',
- 
-    '4 seg+': '#237804', 
-    '3 way': '#1890ff', 
-    '4 way': '#722ed1', 
-    '5 way': '#eb2f96', 
-    '6 way+': '#faad14'
   };
 
   const preparePieData = () => {
@@ -768,24 +810,29 @@ const App: React.FC = () => {
       '2 seg': 0, '3 seg': 0, '4 seg+': 0,
       '3 way': 0, '4 way': 0, '5 way': 0, '6 way+': 0
     };
+
     if (!searchStats || !searchStats.pie) return [];
 
     Object.entries(searchStats.pie).forEach(([f, count]: [string, any]) => {
-      // Skip 1-segment-helis in pie chart
-      if (f.includes('1-segment')) return;
-
-      if (f.includes('2-segment')) counts['2 seg'] += count;
-      else if (f.includes('3-segment')) counts['3 seg'] += count;
-      else if (f.includes('segment-helis')) counts['4 seg+'] += count;
-      else if (f.includes('3-way')) counts['3 way'] += count;
-      else if (f.includes('4-way')) counts['4 way'] += count;
-      else if (f.includes('5-way')) counts['5 way'] += count;
-      else if (f.includes('way-junction')) counts['6 way+'] += count;
+      const groupName = getGroupForType(f);
+      if (groupName) {
+        counts[groupName] += count;
+      }
     });
 
     return Object.entries(counts)
       .filter(([_, val]) => val > 0)
       .map(([name, value]) => ({ name, value }));
+  };
+  
+  const TYPE_COLORS: Record<string, string> = {
+    '2 seg': '#13c2c2',
+    '3 seg': '#52c41a',
+    '4 seg+': '#237804',
+    '3 way': '#1890ff',
+    '4 way': '#722ed1',
+    '5 way': '#eb2f96',
+    '6 way+': '#faad14'
   };
 
   const PIE_COLORS = ['#13c2c2', '#52c41a', '#237804', '#1890ff', '#722ed1', '#eb2f96', '#faad14'];
@@ -1343,8 +1390,8 @@ const App: React.FC = () => {
                            <Divider style={{ margin: '8px 0' }} />
                            <Space style={{ padding: '0 8px 4px' }}>
                              <Button type="link" size="small" onClick={() => {
-                               const vals = SEGMENT_TYPES.map(t => t.value);
-                               form.setFieldsValue({ segment_type: vals });
+                               const vals = availableTypes.map(t => t.value);
+			       form.setFieldsValue({ segment_type: vals });
                                onSearch(form.getFieldsValue());
                              }}>
                                Select All
@@ -1359,9 +1406,9 @@ const App: React.FC = () => {
                          </>
                        )}
                      >
-                       {SEGMENT_TYPES.map(type => (
-                         <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>
-                       ))}
+		       {availableTypes.map(type => (
+ 			 <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>
+		       ))}
                      </Select>
                    </Form.Item>
                   </Col>

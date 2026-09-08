@@ -584,20 +584,28 @@ async def get_global_stats():
     with SessionLocal() as session:
         max_nt_h = session.query(func.max(Helix.total_nt)).scalar() or 0
         max_nt_j = session.query(func.max(Junction.total_nt)).scalar() or 0
-
-        max_way = 0
+        h_folders = session.query(Helix.segment_count_folder).distinct().all()
         j_folders = session.query(Junction.segment_count_folder).distinct().all()
+        all_folders = set()
+        for (f,) in h_folders:
+            if f: all_folders.add(f)
+        max_way = 0
         for (f,) in j_folders:
-            try:
-                if "way" in f:
-                    val = int(f.split("-")[0])
-                    if val > max_way:
-                        max_way = val
-            except Exception:
-                pass
+            if f:
+                all_folders.add(f)
+                try:
+                    if "way" in f:
+                        val = int(f.split("-")[0])
+                        if val > max_way:
+                            max_way = val
+                except Exception:
+                    pass
 
-        return {"max_nt": max(max_nt_h, max_nt_j), "max_way": max_way}
-
+        return {
+            "max_nt": max(max_nt_h, max_nt_j), 
+            "max_way": max_way,
+            "folders": sorted(list(all_folders)) # <-- Wysyłamy listę do Reacta
+        }
 
 @app.get("/api/ids")
 async def get_all_ids():
