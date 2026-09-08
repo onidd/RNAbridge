@@ -365,7 +365,7 @@ async def search(
         h_ang = (
             session.query(
                 Helix.segment_count_folder,
-                (func.cast(Helix.global_bend_angle / 5, Integer) * 5).label("bin"),
+                func.cast(func.floor(Helix.global_bend_angle / 5) * 5, Integer).label("bin"),
                 func.count(Helix.id),
             )
             .filter(Helix.id.in_(h_q.with_entities(Helix.id)))
@@ -377,7 +377,7 @@ async def search(
         j_ang = (
             session.query(
                 Junction.segment_count_folder,
-                (func.cast(Junction.global_bend_angle / 5, Integer) * 5).label("bin"),
+                func.cast(func.floor(Junction.global_bend_angle / 5) * 5, Integer).label("bin"),
                 func.count(Junction.id),
             )
             .filter(Junction.id.in_(j_q.with_entities(Junction.id)))
@@ -463,11 +463,12 @@ async def export_csv(
         for r in j_res:
             combined.append([r[0], r[1], r[2], r[3], "JUNCTION", r[4], r[5], r[6], r[7]])
 
-        # Sort combined results
+        is_str_col = isinstance(a_h.type, String)
+        
         def sort_key(x):
             val = x[8]
             if val is None:
-                return "" if isinstance(val, str) else -1.0
+                return "" if is_str_col else -1.0
             return val
 
         combined.sort(key=sort_key, reverse=(sort_order == "desc"))

@@ -503,16 +503,21 @@ const App: React.FC = () => {
     let currentSortField = sortState.field;
     let currentSortOrder = sortState.order;
 
-    if (sorter && sorter.field) {
+    if (sorter && sorter.order) {
       currentSortField = sorter.field;
       currentSortOrder = sorter.order === 'descend' ? 'desc' : 'asc';
       setSortState({ field: currentSortField, order: currentSortOrder });
+    } else if (sorter && !sorter.order && sorter !== 'reset') {
+      // Obsługa wyczyszczenia sortowania (trzecie kliknięcie)
+      currentSortField = null;
+      currentSortOrder = null;
+      setSortState({ field: null, order: null });
     } else if (sorter === 'reset') {
       currentSortField = null;
       currentSortOrder = null;
       setSortState({ field: null, order: null });
     }
-
+	    
     try {
       const { angle_range, nt_range, ...rest } = values;
 
@@ -602,14 +607,19 @@ const App: React.FC = () => {
   };
 
   const handleBarClick = (data: any) => {
-    if (!data || !data.range) return;
-    // Format range: "0-5°" -> [0, 5]
-    const [min, max] = data.range.replace('°', '').split('-').map(Number);
+    if (!data || !data.range) return; 
+    const matches = data.range.match(/\d+/g);
+    if (!matches || matches.length < 2) return;
+    const min = Number(matches[0]);
+    let max = Number(matches[1]);
+    if (data.range.endsWith(')')) {
+      max -= 0.01;
+    }
     const currentValues = form.getFieldsValue();
     const newFilters = { ...currentValues, angle_range: [min, max] };
     form.setFieldsValue({ angle_range: [min, max] });
     onSearch(newFilters);
-    message.info(`Filtered by angle range: ${min}-${max}°`);
+    message.info(`Filtered by angle range: ${data.range}`);
   };
 
   const handlePieClick = (data: any) => {
@@ -702,13 +712,19 @@ const App: React.FC = () => {
       console.error('Error fetching stats:', error);
     }
   };
-
   const prepareHistogramData = () => {
     const types = ['2 seg', '3 seg', '4 seg+', '3 way', '4 way', '5 way', '6 way+'];
-    const bins = Array.from({ length: 10 }, (_, i) => ({
-      range: `${i * 5}-${(i + 1) * 5}°`,
-      ...Object.fromEntries(types.map(t => [t, 0]))
-    }));
+    const bins = Array.from({ length: 10 }, (_, i) => {
+      const min = i * 5;
+      const max = (i + 1) * 5;
+      // Ostatni przedział (45-50) obustronnie domknięty, reszta prawostronnie otwarta
+      const rangeLabel = i === 9 ? `[${min}, ${max}]` : `[${min}, ${max})`;
+      
+      return {
+        range: rangeLabel,
+        ...Object.fromEntries(types.map(t => [t, 0]))
+      };
+    });
 
     if (!searchStats || !searchStats.angles) return bins;
 
@@ -759,8 +775,6 @@ const App: React.FC = () => {
       if (f.includes('1-segment')) return;
 
       if (f.includes('2-segment')) counts['2 seg'] += count;
-      else if (f.includes('3-segment')) counts['3 seg'] += count;
-
       else if (f.includes('3-segment')) counts['3 seg'] += count;
       else if (f.includes('segment-helis')) counts['4 seg+'] += count;
       else if (f.includes('3-way')) counts['3 way'] += count;
@@ -1379,11 +1393,12 @@ const App: React.FC = () => {
                        range 
                        min={0} 
                        max={50} 
+                       step={0.01}
                        onAfterChange={() => onSearch(form.getFieldsValue())}
                      />
                    </Form.Item>
                   </Col>
-                  <Col xs={12} sm={12} md={6} lg={3}>
+		  <Col xs={12} sm={12} md={6} lg={3}>
                    <Form.Item name="nt_range" label={`NT Range`} initialValue={[0, maxNtLimit]}>
                      <Slider 
                        range 
