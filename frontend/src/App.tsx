@@ -926,7 +926,7 @@ const App: React.FC = () => {
         if (val === 0 && record.segment_count_folder?.includes('1-segment')) {
           return '-';
         } 
-        return val !== null ? <Tag color={val > 45 ? 'volcano' : 'cyan'}>{val.toFixed(1)}°</Tag> : '-';
+        return val !== null ? <Tag color={val > 45 ? 'volcano' : 'cyan'}>{val.toFixed(2)}°</Tag> : '-';
       },
       sorter: true,
     },
