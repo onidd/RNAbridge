@@ -51,9 +51,7 @@ def format_helix_response(h: Helix, session) -> Dict[str, Any]:
                     h_data = data[0]
                     comp3d = Visualizer.prepare_3d_components(h_data, is_junction=False)
 
-                    # Logic to clean sequences (remove paired nucleotides from loops/bulges)
                     curr_gid = 1
-                    # Skip upstream stem if exists
                     if h_data.get("strands", {}).get("upstream", {}):
                         curr_gid += 1
 
@@ -130,7 +128,6 @@ def format_junction_response(j: Junction) -> Dict[str, Any]:
     """Formats a Junction database object into a detailed API response."""
     try:
         raw_angles = json.loads(j.bend_angles) if j.bend_angles else {}
-        # Map stem_1_stem_2 to stem_1_2 for frontend compatibility
         angles = {k.replace("_stem_", "_"): v for k, v in raw_angles.items()}
     except Exception:
         angles = {}
@@ -140,8 +137,6 @@ def format_junction_response(j: Junction) -> Dict[str, Any]:
         pairs = []
     try:
         raw_paths = json.loads(j.stacking_paths) if j.stacking_paths else {}
-        # Same key normalization as `angles` (stem_1_stem_2 -> stem_1_2), so the
-        # frontend can match a path to its corresponding angle via one key.
         paths = {k.replace("_stem_", "_"): v for k, v in raw_paths.items()}
     except Exception:
         paths = {}

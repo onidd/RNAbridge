@@ -171,7 +171,6 @@ def run_categorization():
 
     if varna_tasks:
         print(f"Triggering VARNA image generation for {len(varna_tasks)} items...")
-        # Default to CPU core count. To use a custom number, change it here (e.g., max_workers=4)
         max_workers = os.cpu_count() or 1
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             executor.map(run_varna_task, varna_tasks)

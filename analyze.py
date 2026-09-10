@@ -139,9 +139,6 @@ def main():
                         if id(st) in seen_stem_ids:
                             duplicate_stem_found = True
                         seen_stem_ids.add(id(st))
-                    # Shift numbering so the wrap-around stem (i == n_strands-1,
-                    # the outer stem that opens the junction when reading 5'->3')
-                    # becomes stem_1, and the rest follow in true 5'->3' order.
                     stem_number = ((i + 1) % n_strands) + 1
                     stems_data[f"stem_{stem_number}"] = (
                         {
@@ -152,11 +149,6 @@ def main():
                         else {}
                     )
 
-                # Safety-check: a proper N-way junction must be flanked by N distinct
-                # stems. If the same physical stem matched two different boundary
-                # slots (e.g. a pseudoknot single-bp contact resolved twice while
-                # walking around the loop), the junction's topology is inconsistent
-                # - skip it entirely rather than emit duplicated/misleading stems.
                 if duplicate_stem_found:
                     continue
 
@@ -167,7 +159,6 @@ def main():
                     {"location": {"strands": m_data["strands"]}}, stacking_idx
                 )
 
-                # Filter and select best coaxial pairs (Greedy selection: smallest angle first)
                 potential_pairs = []
                 for p in stacking_data.get("coaxial_pairs", []):
                     # p is e.g. ["stem_1", "stem_2"], bend_angles keys are "stem_1_stem_2"
@@ -533,7 +524,6 @@ def main():
                 add_to_set(comp["internal_stem"].get("strand3p"))
         junc["total_nt"] = len(unique_nts)
 
-    # Ensure output directory exists using absolute path
     abs_output = os.path.abspath(output_file)
     out_dir = os.path.dirname(abs_output)
 

@@ -28,7 +28,6 @@ def sync_pdb_data():
             if OUTPUT_DIR.exists():
                 for sub in OUTPUT_DIR.iterdir():
                     if sub.is_dir():
-                        # Search for any file containing the PDB ID (covers prefixes like varna-tz-)
                         for f in sub.glob(f"*{cif_file.stem}*"):
                             f.unlink()
 

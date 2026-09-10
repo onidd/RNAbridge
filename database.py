@@ -353,7 +353,6 @@ def update_database(session, root_dir):
                     for p in coaxial_pairs:
                         if len(p) >= 2:
                             s1, s2 = str(p[0]), str(p[1])
-                            # Sprawdzanie różnych wariantów nazw kluczy
                             keys_to_check = [f"{s1}_{s2}", f"{s2}_{s1}", f"stem_{s1}_stem_{s2}", f"stem_{s2}_stem_{s1}"]
                             for k in keys_to_check:
                                 if k in angs and angs[k] is not None:
