@@ -346,13 +346,20 @@ def update_database(session, root_dir):
                     add_helix_segments(session, h, h_d, pdb_id, bpseq_cache)
             elif "junctions" in data:
                 for j_d in data["junctions"]:
-                    angs = (
-                        j_d.get("modules", {})
-                        .get("geometry", {})
-                        .get("bend_angles", {})
-                    )
-                    valid = [v for v in angs.values() if v is not None]
-                    best_angle = min(valid) if valid else None
+                    angs = j_d.get("modules", {}).get("geometry", {}).get("bend_angles", {})
+                    coaxial_pairs = j_d.get("modules", {}).get("stacking", {}).get("coaxial_pairs", [])
+                    
+                    coaxial_angles = []
+                    for p in coaxial_pairs:
+                        if len(p) >= 2:
+                            s1, s2 = str(p[0]), str(p[1])
+                            # Sprawdzanie różnych wariantów nazw kluczy
+                            keys_to_check = [f"{s1}_{s2}", f"{s2}_{s1}", f"stem_{s1}_stem_{s2}", f"stem_{s2}_stem_{s1}"]
+                            for k in keys_to_check:
+                                if k in angs and angs[k] is not None:
+                                    coaxial_angles.append(angs[k])
+                                    break
+                    best_angle = min(coaxial_angles) if coaxial_angles else None
 
                     if pdb_id not in bpseq_cache:
                         orig = Path(JSON_DIR) / f"{pdb_id}.json"
