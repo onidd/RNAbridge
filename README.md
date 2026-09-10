@@ -2,7 +2,7 @@
 
 RNAbridge is a professional platform for the analysis of RNA structural motifs. It automates the extraction, categorization, and visualization of complex super-helices and junctions from CIF data, providing a searchable database with interactive 2D and 3D perspectives.
 
-[![DOI](https://zenodo.org/badge/1246503939.svg)](https://doi.org/10.5281/zenodo.20428883)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22693019.svg)](https://doi.org/10.5281/zenodo.22693019)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square&logo=react&logoColor=black)](https://reactjs.org/)
