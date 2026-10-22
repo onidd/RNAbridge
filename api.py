@@ -189,6 +189,12 @@ def format_junction_response(j: Junction) -> Dict[str, Any]:
 
 def apply_filters(h_q, j_q, filters: Dict[str, Any]):
     """Applies a consistent set of filters to both Helix and Junction queries."""
+    
+    methods = filters.get("method")
+    if methods:
+        h_q = h_q.filter(Helix.method.in_(methods))
+        j_q = j_q.filter(Junction.method.in_(methods))
+
     actual = filters.get("segment_type") or filters.get("motif_type") or []
     if actual:
         h_q = h_q.filter(or_(*[Helix.segment_count_folder.contains(t) for t in actual]))
@@ -277,6 +283,7 @@ def apply_filters(h_q, j_q, filters: Dict[str, Any]):
 async def search(
     segment_type: Optional[List[str]] = Query(None),
     motif_type: Optional[List[str]] = Query(None),
+    method: Optional[List[str]] = Query(None),
     min_angle: Optional[float] = Query(None),
     max_angle: Optional[float] = Query(None),
     min_nt: Optional[int] = Query(None),
@@ -299,6 +306,7 @@ async def search(
             {
                 "segment_type": segment_type,
                 "motif_type": motif_type,
+                "method": method,
                 "min_angle": min_angle,
                 "max_angle": max_angle,
                 "min_nt": min_nt,
@@ -395,6 +403,7 @@ async def search(
 async def export_csv(
     segment_type: Optional[List[str]] = Query(None),
     motif_type: Optional[List[str]] = Query(None),
+    method: Optional[List[str]] = Query(None),
     min_angle: Optional[float] = Query(None),
     max_angle: Optional[float] = Query(None),
     min_nt: Optional[int] = Query(None),
@@ -414,6 +423,7 @@ async def export_csv(
             {
                 "segment_type": segment_type,
                 "motif_type": motif_type,
+                "method": method,
                 "min_angle": min_angle,
                 "max_angle": max_angle,
                 "min_nt": min_nt,
@@ -521,6 +531,7 @@ async def download_zip(file_paths: List[str]):
 async def export_zip(
     segment_type: Optional[List[str]] = Query(None),
     motif_type: Optional[List[str]] = Query(None),
+    method: Optional[List[str]] = Query(None),
     min_angle: Optional[float] = Query(None),
     max_angle: Optional[float] = Query(None),
     min_nt: Optional[int] = Query(None),
@@ -538,6 +549,7 @@ async def export_zip(
             {
                 "segment_type": segment_type,
                 "motif_type": motif_type,
+                "method": method,
                 "min_angle": min_angle,
                 "max_angle": max_angle,
                 "min_nt": min_nt,
@@ -596,10 +608,15 @@ async def get_global_stats():
                 except Exception:
                     pass
 
+        all_methods = set()
+        for (m,) in session.query(Helix.method).distinct().all() + session.query(Junction.method).distinct().all():
+            if m: all_methods.add(m)
+
         return {
             "max_nt": max(max_nt_h, max_nt_j), 
             "max_way": max_way,
-            "folders": sorted(list(all_folders)) # <-- Wysyłamy listę do Reacta
+            "folders": sorted(list(all_folders)),
+            "methods": sorted(list(all_methods))
         }
 
 @app.get("/api/ids")

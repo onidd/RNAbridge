@@ -41,7 +41,8 @@ import {
   QuestionCircleOutlined,
   InfoCircleOutlined,
   BookOutlined,
-  DesktopOutlined
+  DesktopOutlined,
+  BuildOutlined
 } from '@ant-design/icons';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -293,6 +294,84 @@ const HelpPage: React.FC = () => (
             fallback="https://placehold.co/1000x100?text=Export+Options+Screenshot"
           />
         </div>
+	
+	<Divider />
+
+        <div id="technologies" style={{ marginBottom: 40 }}>
+          <Title level={4}><BuildOutlined /> 6. External Tools & Technologies</Title>
+          <Paragraph>
+            RNAbridge integrates several state-of-the-art tools for structural analysis and visualization.
+            If you find this service useful, please also consider citing the authors of the underlying software:
+          </Paragraph>
+          <Table
+            pagination={false}
+            size="small"
+            bordered
+            columns={[
+              {
+                title: 'Tool / Technology',
+                dataIndex: 'tool',
+                key: 'tool',
+                width: 150,
+                render: (text) => <Text strong>{text}</Text>
+              },
+              {
+                title: 'Version',
+                dataIndex: 'version',
+                key: 'version',
+                width: 100,
+              },
+              {
+                title: 'Reference / DOI',
+                dataIndex: 'reference',
+                key: 'reference',
+                render: (text, record) => (
+                  <a href={record.doi} target="_blank" rel="noopener noreferrer">
+                    {text}
+                  </a>
+                )
+              }
+            ]}
+            dataSource={[
+              {
+                key: '1',
+                tool: 'X3DNA',
+                version: 'v2.4',
+                reference: '"3DNA: A Versatile, Integrated Software System for the Analysis, Rebuilding and Visualization of Three-Dimensional Nucleic-Acid Structures"',
+                doi: 'https://doi.org/10.1038/nprot.2008.104'
+              },
+              {
+                key: '2',
+                tool: 'VARNA',
+                version: '3.93',
+                reference: '"VARNA: Interactive Drawing and Editing of the RNA Secondary Structure"',
+                doi: 'https://doi.org/10.1093/bioinformatics/btp250'
+              },
+              {
+                key: '3',
+                tool: 'Mol*',
+                version: '3.x',
+                reference: '"Mol* Viewer: Modern Web App for 3D Visualization and Analysis of Large Biomolecular Structures"',
+                doi: 'https://doi.org/10.1093/nar/gkab314'
+              },
+              {
+                key: '4',
+                tool: 'PyMOL',
+                version: '2.5+',
+                reference: '"The PyMOL Molecular Graphics System"',
+                doi: 'https://pymol.org/'
+              },
+	      {
+                key: '5',
+                tool: 'RNApolis Annotator',
+                version: '3.0',
+                reference: '"RNApdbee 3.0: A Unified Web Server for Comprehensive RNA Secondary Structure Annotation from 3D Coordinates"',
+                doi: 'https://doi.org/10.1016/j.jmb.2026.169795'
+              }
+            ]}
+          />
+        </div>
+
 
       </Card>
     </Col>
@@ -397,6 +476,7 @@ const App: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [sortState, setSortState] = useState<{ field: string | null, order: 'asc' | 'desc' | null }>({ field: null, order: null });
   const [availableTypes, setAvailableTypes] = useState<{value: string, label: string}[]>([]);
+  const [availableMethods, setAvailableMethods] = useState<string[]>([]);
   const [currentSvg, setCurrentSvg] = useState<string | null>(null);
   const [svgPreviewVisible, setSvgPreviewVisible] = useState<boolean>(false);
 
@@ -532,6 +612,9 @@ const App: React.FC = () => {
 
       if (rest.search_pdb) params.append('search_pdb', rest.search_pdb);
       if (rest.sequence) params.append('sequence', rest.sequence);
+      if (rest.method && Array.isArray(rest.method)) {
+        rest.method.forEach((m: string) => params.append('method', m));
+      }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
 
@@ -581,6 +664,9 @@ const App: React.FC = () => {
       const params = new URLSearchParams();
       if (rest.search_pdb) params.append('search_pdb', rest.search_pdb);
       if (rest.sequence) params.append('sequence', rest.sequence);
+      if (rest.method && Array.isArray(rest.method)) {
+        rest.method.forEach((m: string) => params.append('method', m));
+      }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
@@ -647,6 +733,9 @@ const App: React.FC = () => {
       const params = new URLSearchParams();
       if (rest.search_pdb) params.append('search_pdb', rest.search_pdb);
       if (rest.sequence) params.append('sequence', rest.sequence);
+      if (rest.method && Array.isArray(rest.method)) {
+        rest.method.forEach((m: string) => params.append('method', m));
+      }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
@@ -706,7 +795,8 @@ const App: React.FC = () => {
       setMaxNtLimit(maxVal);
       form.setFieldsValue({ nt_range: [0, maxVal] });
       setMaxWayFromStats(maxWay);
-    
+      setAvailableMethods(response.data.methods || []);
+
       const formatLabel = (folder: string) => {
         if (folder === '8plus-junctions') return '8+ way Junctions';
         
@@ -1349,8 +1439,8 @@ const App: React.FC = () => {
                   onSearch(allValues);
                 }}
               >
-                <Row gutter={[16, 0]}>
-                  <Col xs={24} sm={12} md={6} lg={3}>
+	      	<Row gutter={[16, 0]}>
+                  <Col xs={24} sm={12} md={8} lg={4}>
                     <Form.Item name="search_pdb" label="CIF ID">
                       <Select
                         placeholder="CIF ID"
@@ -1363,7 +1453,20 @@ const App: React.FC = () => {
                       />
                     </Form.Item>
                   </Col>
-                  <Col xs={24} sm={12} md={6} lg={4}>
+                  
+                  <Col xs={24} sm={12} md={8} lg={5}>
+                    <Form.Item name="method" label="Exp. Method">
+                      <Select
+                        mode="multiple"
+                        placeholder="e.g. X-RAY"
+                        allowClear
+                        maxTagCount="responsive"
+                        options={availableMethods.map(m => ({ value: m, label: m }))}
+                      />
+                    </Form.Item>
+                  </Col>
+
+                  <Col xs={24} sm={12} md={8} lg={5}>
                     <Form.Item
                       name="sequence"
                       label="Sequence Pattern"
@@ -1377,7 +1480,8 @@ const App: React.FC = () => {
                       />
                     </Form.Item>
                   </Col>
-                  <Col xs={24} sm={12} md={12} lg={4}>
+
+                  <Col xs={24} sm={12} md={12} lg={5}>
                    <Form.Item name="segment_type" label="Type">
                      <Select
                        mode="multiple"
@@ -1391,7 +1495,7 @@ const App: React.FC = () => {
                            <Space style={{ padding: '0 8px 4px' }}>
                              <Button type="link" size="small" onClick={() => {
                                const vals = availableTypes.map(t => t.value);
-			       form.setFieldsValue({ segment_type: vals });
+                               form.setFieldsValue({ segment_type: vals });
                                onSearch(form.getFieldsValue());
                              }}>
                                Select All
@@ -1406,13 +1510,14 @@ const App: React.FC = () => {
                          </>
                        )}
                      >
-		       {availableTypes.map(type => (
- 			 <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>
-		       ))}
+                       {availableTypes.map(type => (
+                         <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>
+                       ))}
                      </Select>
                    </Form.Item>
                   </Col>
-                  <Col xs={24} sm={12} md={12} lg={4}>
+
+                  <Col xs={24} sm={12} md={12} lg={5}>
                     <Form.Item label="Coaxially Stacked">
                       <Space.Compact style={{ width: '100%' }}>
                         <Form.Item name="stacking_stem1" noStyle>
@@ -1434,7 +1539,8 @@ const App: React.FC = () => {
                       </Space.Compact>
                     </Form.Item>
                   </Col>
-                  <Col xs={12} sm={12} md={6} lg={3}>
+
+                  <Col xs={24} sm={12} md={12} lg={6}>
                    <Form.Item name="angle_range" label="Angle (0-50°)" initialValue={[0, 50]}>
                      <Slider 
                        range 
@@ -1445,8 +1551,9 @@ const App: React.FC = () => {
                      />
                    </Form.Item>
                   </Col>
-		  <Col xs={12} sm={12} md={6} lg={3}>
-                   <Form.Item name="nt_range" label={`NT Range`} initialValue={[0, maxNtLimit]}>
+
+                  <Col xs={24} sm={12} md={12} lg={6}>
+                   <Form.Item name="nt_range" label="NT Range" initialValue={[0, maxNtLimit]}>
                      <Slider 
                        range 
                        min={0} 
@@ -1455,13 +1562,15 @@ const App: React.FC = () => {
                      />
                    </Form.Item>
                   </Col>
-                  <Col xs={24} lg={3} style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', paddingBottom: '24px' }}>
+
+                  <Col xs={24} sm={24} md={24} lg={12} style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', paddingBottom: '24px' }}>
                    <Button icon={<ClearOutlined />} onClick={clearFilters} size="large">
                      Reset Filters
                    </Button>
                   </Col>
-                  </Row>
-                  </Form>            </Card>
+                </Row>
+                  </Form> 
+       		  </Card>
           </Col>
 
           <Col span={24}>
