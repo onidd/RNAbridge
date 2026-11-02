@@ -617,6 +617,8 @@ const App: React.FC = () => {
       }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
+      
+      if (rest.non_redundant) params.append('non_redundant', 'true');
 
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
@@ -669,6 +671,9 @@ const App: React.FC = () => {
       }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
+      
+      if (rest.non_redundant) params.append('non_redundant', 'true');
+      
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
       }
@@ -738,6 +743,9 @@ const App: React.FC = () => {
       }
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
+      
+      if (rest.non_redundant) params.append('non_redundant', 'true');
+      
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
       }
@@ -1562,11 +1570,18 @@ const App: React.FC = () => {
                      />
                    </Form.Item>
                   </Col>
-
-                  <Col xs={24} sm={24} md={24} lg={12} style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', paddingBottom: '24px' }}>
-                   <Button icon={<ClearOutlined />} onClick={clearFilters} size="large">
-                     Reset Filters
-                   </Button>
+			
+		  <Col xs={24} sm={24} md={24} lg={12} style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', paddingBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+                    <Form.Item name="non_redundant" valuePropName="checked" noStyle>
+                      <Checkbox>
+                        <Tooltip title="Filter structures using the latest BGSU representative set from RNAsolo">
+                          <span>Non-redundant only (RNAsolo) <QuestionCircleOutlined style={{ color: '#888', marginLeft: 4 }} /></span>
+                        </Tooltip>
+                      </Checkbox>
+                    </Form.Item>
+                    <Button icon={<ClearOutlined />} onClick={clearFilters} size="large">
+                      Reset Filters
+                    </Button>
                   </Col>
                 </Row>
                   </Form> 

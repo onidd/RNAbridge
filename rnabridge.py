@@ -1,3 +1,4 @@
+import time
 import itertools
 from typing import Dict, List, Set, Tuple, Optional, Any
 from collections import Counter
@@ -21,6 +22,8 @@ class PDBDownloader:
         """Fetches the list of all active RNA entry IDs from RCSB PDB."""
         url = "https://search.rcsb.org/rcsbsearch/v2/query"
         all_ids, start, rows = set(), 0, 1000
+        expected_total = None
+
         while True:
             query = {
                 "query": {
@@ -35,35 +38,52 @@ class PDBDownloader:
                 "return_type": "entry",
                 "request_options": {"paginate": {"start": start, "rows": rows}},
             }
-            try:
-                r = requests.post(url, json=query, timeout=30)
-                r.raise_for_status()
-                data = r.json()
-                results = data.get("result_set", [])
-                if not results:
+
+            success = False
+            for attempt in range(1, 4):
+                try:
+                    r = requests.post(url, json=query, timeout=30)
+                    r.raise_for_status()
+                    data = r.json()
+                    if expected_total is None:
+                        expected_total = data.get("total_count", 0)
+                    results = data.get("result_set", [])
+                    for res in results:
+                        all_ids.add(res["identifier"].upper())
+                    success = True
                     break
-                for res in results:
-                    all_ids.add(res["identifier"].upper())
-                start += rows
-                if len(all_ids) >= data.get("total_count", 0):
-                    break
-            except Exception:
+                except Exception as e:
+                    print(f"[WARNING] RCSB API error at start={start} (attempt {attempt}/3): {e}")
+                    time.sleep(5)
+
+            if not success:
+                print(f"[CRITICAL] Failed to fetch full list from RCSB PDB! Stopped at {len(all_ids)}/{expected_total}.")
+                return set()
+
+            if not results or (expected_total and len(all_ids) >= expected_total):
                 break
+            start += rows
+
+        if not expected_total or len(all_ids) < expected_total:
+            print(f"[CRITICAL] Incomplete PDB ID list fetched ({len(all_ids)}/{expected_total}).")
+            return set()
+
         return all_ids
 
     @staticmethod
     def download_cif(pdb_id: str, target_path: str) -> bool:
         """Downloads a CIF file for a given PDB ID."""
-        try:
-            r = requests.get(
-                f"https://files.rcsb.org/download/{pdb_id.upper()}.cif", timeout=20
-            )
-            if r.status_code == 200:
-                with open(target_path, "wb") as f:
-                    f.write(r.content)
-                return True
-        except Exception:
-            pass
+        for attempt in range(1, 4):
+            try:
+                r = requests.get(
+                    f"https://files.rcsb.org/download/{pdb_id.upper()}.cif", timeout=20
+                )
+                if r.status_code == 200 and len(r.content) > 100:
+                    with open(target_path, "wb") as f:
+                        f.write(r.content)
+                    return True
+            except Exception:
+                time.sleep(2)
         return False
 
 
@@ -324,37 +344,33 @@ class Core:
     """Core RNA structural logic and classification."""
     @staticmethod
     def _has_pseudoknot_char(structure: str) -> bool:
-        """Checks for ANY pseudoknot marker: bracket pairs ([{<>}]) AND letter-coded
-        higher-order pseudoknot levels (A-Z / a-z) used in extended dot-bracket notation.
-        Plain '(' ')' '.' chars are never pseudoknot markers."""
-        return any(c in structure for c in ["[", "]", "{", "}", "<", ">"]) or any(
-            c.isalpha() for c in structure
-        )
+        return False
+
+    @staticmethod
+    def loop_nt_count(structure: str) -> int:
+        """Counts loop nucleotides (dots AND pseudoknot characters, i.e., anything except '(' and ')')."""
+        return sum(1 for c in structure if c not in "()")
 
     @staticmethod
     def classify_motif(loop_strands: List[Dict]) -> Optional[str]:
         """Classifies an RNA loop into HAIRPIN, BULGE, INTERNAL_LOOP, or N-WAY_JUNCTION."""
         if len(loop_strands) == 1:
             s = loop_strands[0]
-            if Core._has_pseudoknot_char(s.get("structure", "")):
-                return None
-            if "." in s.get("structure", ""):
+            if Core.loop_nt_count(s.get("structure", "")) > 0:
                 return "HAIRPIN"
             return None
+
         if len(loop_strands) == 2:
-            for s in loop_strands:
-                if Core._has_pseudoknot_char(s.get("structure", "")):
-                    return None
-            has_dots = [("." in s.get("structure", "")) for s in loop_strands]
-            if has_dots[0] and has_dots[1]:
+            has_loop_nts = [
+                (Core.loop_nt_count(s.get("structure", "")) > 0) for s in loop_strands
+            ]
+            if has_loop_nts[0] and has_loop_nts[1]:
                 return "INTERNAL_LOOP"
-            elif has_dots[0] ^ has_dots[1]:
+            elif has_loop_nts[0] ^ has_loop_nts[1]:
                 return "BULGE"
             return None
+
         if len(loop_strands) >= 3:
-            for s in loop_strands:
-                if Core._has_pseudoknot_char(s.get("structure", "")):
-                    return None
             return f"{len(loop_strands)}_WAY_JUNCTION"
         return None
 
@@ -613,7 +629,7 @@ class Stacking:
     def check_general_coaxiality(motif: dict, stacking_index: set) -> dict:
         """Determines if a bulge motif is BULGE-IN or BULGE-OUT based on stacking paths."""
         s = next(
-            (s for s in motif.get("strands", []) if "." in s.get("structure", "")), None
+            (s for s in motif.get("strands", []) if Core.loop_nt_count(s.get("structure", "")) > 0), None
         )
         if not s:
             return {
@@ -622,7 +638,7 @@ class Stacking:
             }
 
         f, l = Utils.to_int(s.get("first")), Utils.to_int(s.get("last"))
-        n_2d = s.get("structure", "").count(".")
+        n_2d = Core.loop_nt_count(s.get("structure", "")) 
         valid_nodes = set(range(min(f, l), max(f, l) + 1))
 
         has_path, stacked_count, path = Stacking._get_stacking_path_info(
@@ -671,7 +687,7 @@ class Stacking:
         s2d = []
         for s in strands:
             f, l = Utils.to_int(s.get("first")), Utils.to_int(s.get("last"))
-            s2d.append(s.get("structure", "").count("."))
+            s2d.append(Core.loop_nt_count(s.get("structure", "")))
             if f is not None and l is not None:
                 valid_nodes.update(range(min(f, l), max(f, l) + 1))
         valid_nodes.update(interface_up)
@@ -784,7 +800,7 @@ class Stacking:
         nucleotides). NO means no such path exists (the stacking is broken)."""
         s = motif.get("strands", [{}])[0]
         f, l = Utils.to_int(s.get("first")), Utils.to_int(s.get("last"))
-        n2d = s.get("structure", "").count(".")
+        n2d = Core.loop_nt_count(s.get("structure", ""))
         if f is None or l is None:
             return {
                 "status": "ERROR",
@@ -1359,6 +1375,11 @@ class Visualizer:
                 s.get("sequence", ""),
                 s.get("structure", ""),
             )
+
+            cleaned_struct = "".join(
+                c if c in "()" else "." for c in struct
+            )
+
             if f is None or l is None:
                 return
             step = 1 if f <= l else -1
@@ -1379,7 +1400,8 @@ class Visualizer:
                         )
                 nt_data[ser] = {
                     "char": seq[i],
-                    "struct": struct[i] if i < len(struct) else ".",
+                    "struct": cleaned_struct[i] if i < len(cleaned_struct) else ".",
+                    "orig_struct": struct[i] if i < len(struct) else ".",
                     "color": color,
                     "label": label,
                 }
@@ -1442,22 +1464,30 @@ class Visualizer:
                 }
             )
 
-        base_pairs, stack = [], []
+        base_pairs = []
+        stacks = {}
+        close_to_open = {')': '(', ']': '[', '}': '{', '>': '<'}
+        for i in range(26):
+            close_to_open[chr(ord('a') + i)] = chr(ord('A') + i)
+
         for ser in sorted_serials:
-            if nt_data[ser]["struct"] == "(":
-                stack.append(ser)
-            elif nt_data[ser]["struct"] == ")" and stack:
-                p_ser = stack.pop()
-                base_pairs.append(
-                    {
+            c = nt_data[ser].get("orig_struct", ".")
+            
+            if c in "([{<" or (c.isalpha() and c.isupper()):
+                stacks.setdefault(c, []).append(ser)
+            elif c in ")]}>" or (c.isalpha() and c.islower()):
+                open_c = close_to_open.get(c)
+                if open_c and stacks.get(open_c):
+                    p_ser = stacks[open_c].pop()
+                    base_pairs.append({
                         "id1": ser_to_v_id[p_ser],
                         "id2": ser_to_v_id[ser],
                         "edge5": "WC",
                         "edge3": "WC",
                         "stericity": "CIS",
                         "canonical": True,
-                    }
-                )
+                    })
+
 
         lw_s, lw_e = (
             {"c": "CIS", "t": "TRANS"},

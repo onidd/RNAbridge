@@ -1,3 +1,5 @@
+import time
+import urllib.request
 import os
 import json
 import csv
@@ -9,10 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from sqlalchemy import create_engine, or_, and_, func, String, Integer
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import tuple_
 from database import Helix, Segment, Junction
 from config import DATABASE_URL
 from rnabridge import Visualizer
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 
 app = FastAPI()
 
@@ -32,7 +35,75 @@ engine = (
     else create_engine(DATABASE_URL)
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+NR_CACHE_FILE = "non_redundant_cache.json"
+_nr_memory_cache = {"data": {}, "timestamp": 0}
 
+
+def get_non_redundant_map() -> Dict[str, List[Set[str]]]:
+    """
+    Fetches the BGSU representative set from RNAsolo and returns a dict:
+    { 'PDB_ID': [set_of_chains_1, set_of_chains_2, ...] }
+    Preserves exact chain case (e.g., 'c' vs 'C') and multi-chain complexes (e.g., 'A-B-C-D-E-F-G-H').
+    """
+    now = time.time()
+    if _nr_memory_cache["data"] and (now - _nr_memory_cache["timestamp"] < 86400):
+        return _nr_memory_cache["data"]
+
+    try:
+        ver_url = "https://rnasolo.cs.put.poznan.pl/api/statistics/version/"
+        with urllib.request.urlopen(ver_url, timeout=10) as resp:
+            ver_data = json.loads(resp.read().decode("utf-8"))
+        bgsu_ver = ver_data.get("bgsu_ver", "").replace(".", "_")
+
+        if bgsu_ver:
+            txt_url = f"https://rnasolo.cs.put.poznan.pl/media/files/bunches/BGSU__R__All__All__1000_0__txt_{bgsu_ver}.txt"
+            with urllib.request.urlopen(txt_url, timeout=15) as resp:
+                lines = resp.read().decode("utf-8").splitlines()
+
+            nr_map: Dict[str, List[Set[str]]] = {}
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("_")
+                if parts[0] == "PDB" and len(parts) >= 4:
+                    pdb_id = parts[1][-4:].upper()
+                    chain_part = "_".join(parts[3:])
+                elif len(parts) >= 3:
+                    pdb_id = parts[0][-4:].upper()
+                    chain_part = "_".join(parts[2:])
+                else:
+                    continue
+
+                chain_set = {c for c in chain_part.split("-") if c}
+                if chain_set:
+                    nr_map.setdefault(pdb_id, []).append(chain_set)
+
+            if nr_map:
+                _nr_memory_cache["data"] = nr_map
+                _nr_memory_cache["timestamp"] = now
+                try:
+                    serializable = {k: [list(s) for s in v] for k, v in nr_map.items()}
+                    with open(NR_CACHE_FILE, "w") as f:
+                        json.dump({"bgsu_ver": bgsu_ver, "map": serializable}, f)
+                except Exception:
+                    pass
+                return nr_map
+    except Exception as e:
+        print(f"[WARNING] Could not fetch non-redundant list from RNAsolo: {e}")
+
+    if os.path.exists(NR_CACHE_FILE):
+        try:
+            with open(NR_CACHE_FILE, "r") as f:
+                raw_map = json.load(f).get("map", {})
+                nr_map = {k: [set(s) for s in v] for k, v in raw_map.items()}
+                _nr_memory_cache["data"] = nr_map
+                _nr_memory_cache["timestamp"] = now
+                return nr_map
+        except Exception:
+            pass
+
+    return _nr_memory_cache["data"]
 
 def format_helix_response(h: Helix, session) -> Dict[str, Any]:
     """Formats a Helix database object into a detailed API response with cleaned motif sequences."""
@@ -61,7 +132,7 @@ def format_helix_response(h: Helix, session) -> Dict[str, Any]:
                             seq, struct = loc.get("sequence", ""), loc.get("structure", "")
                             if seq and struct and len(seq) == len(struct):
                                 clean_seq = "".join(
-                                    [seq[idx] for idx in range(len(seq)) if struct[idx] == "."]
+                                    [seq[idx] for idx in range(len(seq)) if struct[idx] not in "()"]
                                 )
                                 if clean_seq:
                                     c_seq_parts.append(clean_seq)
@@ -276,6 +347,31 @@ def apply_filters(h_q, j_q, filters: Dict[str, Any]):
         if s2:
             j_q = j_q.filter(Junction.coaxial_pairs.contains(f'"{s2.lower()}"'))
 
+    if filters.get("non_redundant"):
+        nr_map = get_non_redundant_map()
+        if nr_map:
+            h_q = h_q.filter(Helix.pdb_id.in_(nr_map.keys()))
+            j_q = j_q.filter(Junction.pdb_id.in_(nr_map.keys()))
+
+            valid_h_pairs = set()
+            for pid, ch_str in h_q.with_entities(Helix.pdb_id, Helix.chains).distinct().all():
+                if not ch_str:
+                    continue
+                motif_chains = set(ch_str.split("-"))
+                if any(motif_chains.issubset(rep_set) for rep_set in nr_map.get(pid, [])):
+                    valid_h_pairs.add((pid, ch_str))
+
+            valid_j_pairs = set()
+            for pid, ch_str in j_q.with_entities(Junction.pdb_id, Junction.chains).distinct().all():
+                if not ch_str:
+                    continue
+                motif_chains = set(ch_str.split("-"))
+                if any(motif_chains.issubset(rep_set) for rep_set in nr_map.get(pid, [])):
+                    valid_j_pairs.add((pid, ch_str))
+
+            h_q = h_q.filter(tuple_(Helix.pdb_id, Helix.chains).in_(valid_h_pairs)) if valid_h_pairs else h_q.filter(Helix.id < 0)
+            j_q = j_q.filter(tuple_(Junction.pdb_id, Junction.chains).in_(valid_j_pairs)) if valid_j_pairs else j_q.filter(Junction.id < 0)
+
     return h_q, j_q
 
 
@@ -296,6 +392,7 @@ async def search(
     sort_order: str = Query("asc"),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
+    non_redundant: Optional[bool] = Query(False),
 ):
     """General search endpoint for helices and junctions."""
     with SessionLocal() as session:
@@ -315,6 +412,7 @@ async def search(
                 "sequence": sequence,
                 "stacking_stem1": stacking_stem1,
                 "stacking_stem2": stacking_stem2,
+                "non_redundant": non_redundant,
             },
         )
 
@@ -414,6 +512,7 @@ async def export_csv(
     stacking_stem2: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
     sort_order: str = Query("asc"),
+    non_redundant: Optional[bool] = Query(False),
 ):
     """Exports all filtered results as a CSV file."""
     with SessionLocal() as session:
@@ -432,6 +531,7 @@ async def export_csv(
                 "sequence": sequence,
                 "stacking_stem1": stacking_stem1,
                 "stacking_stem2": stacking_stem2,
+                "non_redundant": non_redundant,
             },
         )
 
@@ -540,6 +640,7 @@ async def export_zip(
     sequence: Optional[str] = Query(None),
     stacking_stem1: Optional[str] = Query(None),
     stacking_stem2: Optional[str] = Query(None),
+    non_redundant: Optional[bool] = Query(False),
 ):
     """Exports all filtered results as a ZIP file."""
     with SessionLocal() as session:
@@ -558,6 +659,7 @@ async def export_zip(
                 "sequence": sequence,
                 "stacking_stem1": stacking_stem1,
                 "stacking_stem2": stacking_stem2,
+                "non_redundant": non_redundant,
             },
         )
 

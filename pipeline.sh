@@ -42,6 +42,10 @@ fi
 # --- STEP 1: PDB SYNCHRONIZATION ---
 echo "--- STEP 1: Synchronizing files with PDB ---"
 #$PY fetch_pdb.py
+if [[ $? -ne 0 ]]; then
+    echo "ERROR: PDB synchronization failed. Aborting pipeline!"
+    exit 1
+fi
 
 # --- STEP 2: FILE ANALYSIS ---
 echo "--- STEP 2: Processing CIF files ---"
@@ -68,8 +72,8 @@ find "$input_cif_dir" -maxdepth 1 -name "*.cif" | while read cif_file; do
     # RNA Annotation
     if [[ ! -f "$json_file" ]]; then
         echo "   -> Running annotator (with 10m timeout)..."
-        timeout 600s annotator --json "$json_file" "$cif_file"
-        status=$?
+        timeout 600s annotator --decompose-pseudoknot-free --json "$json_file" "$cif_file"
+	status=$?
         if [[ $status -ne 0 ]]; then
             echo "   -> ERROR: annotator failed for $id. Skipping."
             continue

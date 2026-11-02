@@ -35,6 +35,7 @@ class Helix(Base):
     resolution = Column(Float)
     method = Column(String)
     segment_count_folder = Column(String)
+    chains = Column(String, index=True)
     total_nt = Column(Integer)
     global_bend_angle = Column(Float)
     path_json = Column(String, index=True, unique=True)
@@ -77,6 +78,7 @@ class Junction(Base):
     resolution = Column(Float)
     method = Column(String)
     segment_count_folder = Column(String)
+    chains = Column(String, index=True)
     total_nt = Column(Integer)
     extended_helices_count = Column(Integer, default=0)
     j_id = Column(Integer)
@@ -111,9 +113,13 @@ def setup_database(engine):
         cols_h = [c["name"] for c in inspector.get_columns("helices")]
         if "method" not in cols_h:
             conn.execute(text("ALTER TABLE helices ADD COLUMN method VARCHAR"))
+        if "chains" not in cols_h:
+            conn.execute(text("ALTER TABLE helices ADD COLUMN chains VARCHAR"))
         cols_j = [c["name"] for c in inspector.get_columns("junctions")]
         if "method" not in cols_j:
             conn.execute(text("ALTER TABLE junctions ADD COLUMN method VARCHAR"))
+        if "chains" not in cols_j:
+            conn.execute(text("ALTER TABLE junctions ADD COLUMN chains VARCHAR"))    
         if "global_bend_angle" not in cols_j:
             conn.execute(
                 text("ALTER TABLE junctions ADD COLUMN global_bend_angle FLOAT")
@@ -253,6 +259,33 @@ def add_helix_segments(session, h_obj, h_data, pdb_id, bp_cache):
             gid += 1
 
 
+def extract_motif_chains(data_obj: dict) -> str:
+    """Extracts sorted unique chain IDs (case-sensitive, e.g. 'c' or 'A-B') from a motif JSON object."""
+    chains = set()
+
+    def add_s(s):
+        if isinstance(s, dict):
+            c = s.get("first", {}).get("chain") or s.get("last", {}).get("chain")
+            if c is not None and str(c).strip() != "":
+                chains.add(str(c).strip())
+
+    for loc in data_obj.get("location", []):
+        add_s(loc)
+    for stem in data_obj.get("context", {}).values():
+        if isinstance(stem, dict):
+            add_s(stem.get("strand5p"))
+            add_s(stem.get("strand3p"))
+    for s in ["upstream", "downstream"]:
+        add_s(data_obj.get("strands", {}).get(s, {}).get("strand5p"))
+        add_s(data_obj.get("strands", {}).get(s, {}).get("strand3p"))
+    for c in data_obj.get("components", []):
+        for loc in c.get("location", []):
+            add_s(loc)
+        add_s(c.get("internal_stem", {}).get("strand5p"))
+        add_s(c.get("internal_stem", {}).get("strand3p"))
+
+    return "-".join(sorted(chains))
+
 def update_database(session, root_dir):
     """Scans classification_result and updates the database with new entries."""
     print("--- STARTING DATABASE UPDATE ---")
@@ -307,10 +340,19 @@ def update_database(session, root_dir):
                 or existing_j.get(ps_abs)
             )
             if target:
-                if not target.path_svg and svg:
-                    target.path_svg = svg
-                    session.flush()
-                continue
+              if not target.path_svg and svg:
+                  target.path_svg = svg
+                  session.flush()
+              if not target.chains:
+                  try:
+                      d_tmp = json.load(open(path, "r", encoding="utf-8"))
+                      items = d_tmp.get("helices") or d_tmp.get("junctions") or []
+                      if items:
+                          target.chains = extract_motif_chains(items[0])
+                          session.flush()
+                  except Exception:
+                      pass
+              continue
 
             if pdb_id not in metadata_cache:
                 print(f"   -> Fetching metadata for {pdb_id} from PDB...")
@@ -333,6 +375,7 @@ def update_database(session, root_dir):
                         resolution=res,
                         method=met,
                         segment_count_folder=path.parent.name,
+                        chains=extract_motif_chains(h_d),
                         total_nt=h_d.get("total_nt"),
                         global_bend_angle=h_d.get("global_measures", {}).get("angle") if path.parent.name != '1-segment-helis' else (h_d.get("global_measures", {}).get("angle") or 0.0),
                         path_json=ps_rel,
@@ -379,6 +422,7 @@ def update_database(session, root_dir):
                         resolution=res,
                         method=met,
                         segment_count_folder=path.parent.name,
+                        chains=extract_motif_chains(j_d),
                         total_nt=j_d.get("total_nt"),
                         j_id=j_d.get("j_id"),
                         stacking_status=j_d.get("modules", {})
@@ -415,6 +459,10 @@ def cleanup_database(session):
         return
     active = {f.stem.upper() for f in cif_p.glob("*.cif*")}
 
+    if len(active) < 5000:
+        print(f"[SAFETY GUARD] Only {len(active)} CIF files found in {cif_p}. Skipping database cleanup!")
+        return
+
     td_h = [
         h.id
         for h in session.query(Helix.id, Helix.pdb_id).all()
@@ -425,6 +473,13 @@ def cleanup_database(session):
         for j in session.query(Junction.id, Junction.pdb_id).all()
         if j.pdb_id.upper() not in active
     ]
+
+    if len(td_h) + len(td_j) > 500:
+        print(
+            f"[SAFETY GUARD] Too many database records marked for deletion "
+            f"(Helices: {len(td_h)}, Junctions: {len(td_j)}). Skipping database cleanup!"
+        )
+        return
 
     if td_h:
         session.query(Segment).filter(Segment.helix_id.in_(td_h)).delete(
@@ -438,7 +493,6 @@ def cleanup_database(session):
             synchronize_session=False
         )
     session.commit()
-
 
 if __name__ == "__main__":
     eng = get_engine()
