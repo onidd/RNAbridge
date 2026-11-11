@@ -770,13 +770,20 @@ class Stacking:
                 continue
 
             found = [path1]
-            remaining_nodes = valid_nodes - set(path1[1:-1])
             start_used, end_used = path1[0], path1[-1]
             other_starts = [x for x in stem_ends[i] if x != start_used]
             other_targets = [x for x in stem_ends[j] if x != end_used]
+
             if other_starts and other_targets:
+                path2_nodes = (
+                    valid_nodes
+                    - set(path1)
+                    | set(other_starts)
+                    | set(other_targets)
+                )
+
                 has_path2, _, path2 = Stacking._get_stacking_path_info(
-                    other_starts, other_targets, remaining_nodes, stacking_index
+                    other_starts, other_targets, path2_nodes, stacking_index
                 )
                 if has_path2:
                     found.append(path2)
@@ -959,6 +966,21 @@ class GeometryCalculator:
 
         dot = max(-1.0, min(1.0, sum(a * b for a, b in zip(v1, v2))))
         return round(math.degrees(math.acos(dot)), 2)
+
+    #@staticmethod
+    #def calculate_bend_angle(v1: list, v2: list) -> Optional[float]:
+    #    """Calculates the angle in degrees between two normalized 3D vectors."""
+    #    if not v1 or not v2 or len(v1) != len(v2):
+    #        return None
+    #
+    #    norm1 = math.sqrt(sum(x * x for x in v1))
+    #    norm2 = math.sqrt(sum(x * x for x in v2))
+    #    if norm1 == 0 or norm2 == 0:
+    #        return None
+    #
+    #    dot = sum(a * b for a, b in zip(v1, v2)) / (norm1 * norm2)
+    #    dot = max(-1.0, min(1.0, dot))
+    #    return round(math.degrees(math.acos(dot)), 2)
 
     @staticmethod
     def validate_junction_compactness(loop_strands: List[Dict], mapping: Dict) -> bool:

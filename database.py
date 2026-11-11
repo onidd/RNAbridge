@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from pathlib import Path
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -30,6 +31,7 @@ class Helix(Base):
     __tablename__ = "helices"
     id = Column(Integer, primary_key=True, autoincrement=True)
     pdb_id = Column(String, index=True)
+    dataset = Column(String, index=True, nullable=False, default="pdb")
     molecule = Column(String)
     organism = Column(String)
     resolution = Column(Float)
@@ -73,6 +75,7 @@ class Junction(Base):
     __tablename__ = "junctions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     pdb_id = Column(String, index=True)
+    dataset = Column(String, index=True, nullable=False, default="pdb")
     molecule = Column(String)
     organism = Column(String)
     resolution = Column(Float)
@@ -108,24 +111,44 @@ def setup_database(engine):
     from sqlalchemy import inspect, text
 
     Base.metadata.create_all(engine)
+
     inspector = inspect(engine)
+    cols_h = {c["name"] for c in inspector.get_columns("helices")}
+    cols_j = {c["name"] for c in inspector.get_columns("junctions")}
+
     with engine.begin() as conn:
-        cols_h = [c["name"] for c in inspector.get_columns("helices")]
+        if "dataset" not in cols_h:
+            conn.execute(
+                text(
+                    "ALTER TABLE helices "
+                    "ADD COLUMN dataset VARCHAR NOT NULL DEFAULT 'pdb'"
+                )
+            )
+
+        if "dataset" not in cols_j:
+            conn.execute(
+                text(
+                    "ALTER TABLE junctions "
+                    "ADD COLUMN dataset VARCHAR NOT NULL DEFAULT 'pdb'"
+                )
+            )
+
         if "method" not in cols_h:
             conn.execute(text("ALTER TABLE helices ADD COLUMN method VARCHAR"))
         if "chains" not in cols_h:
             conn.execute(text("ALTER TABLE helices ADD COLUMN chains VARCHAR"))
-        cols_j = [c["name"] for c in inspector.get_columns("junctions")]
+
         if "method" not in cols_j:
             conn.execute(text("ALTER TABLE junctions ADD COLUMN method VARCHAR"))
         if "chains" not in cols_j:
-            conn.execute(text("ALTER TABLE junctions ADD COLUMN chains VARCHAR"))    
+            conn.execute(text("ALTER TABLE junctions ADD COLUMN chains VARCHAR"))
         if "global_bend_angle" not in cols_j:
             conn.execute(
                 text("ALTER TABLE junctions ADD COLUMN global_bend_angle FLOAT")
             )
         if "stacking_paths" not in cols_j:
             conn.execute(text("ALTER TABLE junctions ADD COLUMN stacking_paths TEXT"))
+
     return sessionmaker(bind=engine)()
 
 def get_auth_label_from_cache(bp_cache, pdb_id, ser):
@@ -160,16 +183,21 @@ def convert_junction_stacking_paths(raw_paths, bp_cache, pdb_id):
 
 
 
-def add_helix_segments(session, h_obj, h_data, pdb_id, bp_cache):
+def add_helix_segments(session, h_obj, h_data, pdb_id, bp_cache, bpseq_key=None):
     """Helper to populate the segments table for a specific helix."""
-    if pdb_id not in bp_cache:
-        orig = Path(JSON_DIR) / f"{pdb_id}.json"
-        bp_cache[pdb_id] = (
+    cache_key = bpseq_key or pdb_id
+
+    if cache_key not in bp_cache:
+        orig = Path(JSON_DIR) / f"{cache_key}.json"
+        if not orig.exists() and cache_key != pdb_id:
+            orig = Path(JSON_DIR) / f"{pdb_id}.json"
+
+        bp_cache[cache_key] = (
             json.load(open(orig, "r")).get("bpseq_index", {}) if orig.exists() else {}
         )
 
     def get_auth_label(ser):
-        entry = bp_cache[pdb_id].get(str(ser))
+        entry = bp_cache[cache_key].get(str(ser))        
         if entry and entry.get("auth"):
             auth = entry["auth"]
             num, icode = (
@@ -329,7 +357,37 @@ def update_database(session, root_dir):
         for path in batch:
             ps_rel = to_rel(path)
             ps_abs = str(path.absolute())
-            pdb_id = path.name.split("_")[0].upper()
+            name_parts = path.stem.split("_")
+            if len(name_parts) >= 2 and name_parts[0].upper() == "PDB":
+                pdb_id = name_parts[1][-4:].upper()
+            else:
+                pdb_id = name_parts[0].upper()
+
+            dataset_name = os.environ.get("RNABRIDGE_DATASET", "pdb").lower()
+
+            bpseq_key = pdb_id
+            if dataset_name == "rnasolo":
+                match = re.match(
+                    r"^(.*)_(?:h\d+_\d+-segment|j\d+_\d+way)$",
+                    path.stem,
+                )
+                if match:
+                    bpseq_key = match.group(1)
+
+            if bpseq_key not in bpseq_cache:
+                orig = Path(JSON_DIR) / f"{bpseq_key}.json"
+                if not orig.exists() and bpseq_key != pdb_id:
+                    orig = Path(JSON_DIR) / f"{pdb_id}.json"
+
+                try:
+                    bpseq_cache[bpseq_key] = (
+                        json.load(open(orig, "r", encoding="utf-8")).get("bpseq_index", {})
+                        if orig.exists()
+                        else {}
+                    )
+                except Exception:
+                    bpseq_cache[bpseq_key] = {}
+
             svg = svg_cache.get(path.stem)
 
             # Check if record exists but is missing SVG
@@ -370,6 +428,7 @@ def update_database(session, root_dir):
                 for h_d in data["helices"]:
                     h = Helix(
                         pdb_id=pdb_id,
+                        dataset=dataset_name,
                         molecule=mol,
                         organism=org,
                         resolution=res,
@@ -386,7 +445,7 @@ def update_database(session, root_dir):
                     )
                     session.add(h)
                     session.flush()
-                    add_helix_segments(session, h, h_d, pdb_id, bpseq_cache)
+                    add_helix_segments(session, h, h_d, pdb_id, bpseq_cache, bpseq_key)
             elif "junctions" in data:
                 for j_d in data["junctions"]:
                     angs = j_d.get("modules", {}).get("geometry", {}).get("bend_angles", {})
@@ -403,20 +462,14 @@ def update_database(session, root_dir):
                                     break
                     best_angle = min(coaxial_angles) if coaxial_angles else None
 
-                    if pdb_id not in bpseq_cache:
-                        orig = Path(JSON_DIR) / f"{pdb_id}.json"
-                        bpseq_cache[pdb_id] = (
-                            json.load(open(orig, "r")).get("bpseq_index", {})
-                            if orig.exists()
-                            else {}
-                        )
                     conv_stacking_paths = convert_junction_stacking_paths(
                         j_d.get("modules", {}).get("stacking", {}).get("stacking_paths", {}),
                         bpseq_cache,
-                        pdb_id,
+                        bpseq_key,
                     )
                     j = Junction(                        
                         pdb_id=pdb_id,
+                        dataset=dataset_name,
                         molecule=mol,
                         organism=org,
                         resolution=res,
@@ -464,14 +517,18 @@ def cleanup_database(session):
         return
 
     td_h = [
-        h.id
-        for h in session.query(Helix.id, Helix.pdb_id).all()
-        if h.pdb_id.upper() not in active
+        row.id
+        for row in session.query(Helix.id, Helix.pdb_id)
+        .filter(Helix.dataset == "pdb")
+        .all()
+        if row.pdb_id.upper() not in active
     ]
     td_j = [
-        j.id
-        for j in session.query(Junction.id, Junction.pdb_id).all()
-        if j.pdb_id.upper() not in active
+        row.id
+        for row in session.query(Junction.id, Junction.pdb_id)
+        .filter(Junction.dataset == "pdb")
+        .all()
+        if row.pdb_id.upper() not in active
     ]
 
     if len(td_h) + len(td_j) > 500:
@@ -497,9 +554,10 @@ def cleanup_database(session):
 if __name__ == "__main__":
     eng = get_engine()
     sess = setup_database(eng)
-    try:
+    dataset_name = os.environ.get("RNABRIDGE_DATASET", "pdb").lower()
+    if dataset_name == "pdb":
         cleanup_database(sess)
-        update_database(sess, OUTPUT_DIR)
-        print("--- DATABASE UPDATE COMPLETE ---")
-    finally:
-        sess.close()
+    else:
+        print(f"Skipping CIF cleanup for dataset: {dataset_name}")
+
+    update_database(sess, OUTPUT_DIR)

@@ -5,6 +5,7 @@ import json
 import csv
 import io
 import zipfile
+from threading import Lock
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +14,8 @@ from sqlalchemy import create_engine, or_, and_, func, String, Integer
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import tuple_
 from database import Helix, Segment, Junction
-from config import DATABASE_URL
+from pathlib import Path
+from config import DATABASE_URL, OUTPUT_DIR, BASE_DIR
 from rnabridge import Visualizer
 from typing import List, Optional, Dict, Any, Set
 
@@ -35,9 +37,75 @@ engine = (
     else create_engine(DATABASE_URL)
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+OUTPUT_ROOTS = {
+    Path(OUTPUT_DIR).resolve(),
+    (BASE_DIR / "result").resolve(),
+    (BASE_DIR / "rnasolo" / "result").resolve(),
+}
+
+
+def resolve_output_file(file_path: str) -> Path:
+    """Resolve a path only if it stays within an allowed results directory."""
+    candidate = Path(file_path)
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+
+    resolved = candidate.resolve()
+
+    for root in OUTPUT_ROOTS:
+        try:
+            resolved.relative_to(root)
+            return resolved
+        except ValueError:
+            continue
+
+    raise HTTPException(status_code=404)
+
 NR_CACHE_FILE = "non_redundant_cache.json"
 _nr_memory_cache = {"data": {}, "timestamp": 0}
 
+_NR_ALLOWED_PAIRS_CACHE = {"map_id": None, "pairs": frozenset()}
+_NR_ALLOWED_PAIRS_LOCK = Lock()
+
+
+def get_nr_allowed_pairs(session, nr_map: Dict[str, List[Set[str]]]) -> Set[tuple]:
+    map_id = id(nr_map)
+
+    with _NR_ALLOWED_PAIRS_LOCK:
+        if _NR_ALLOWED_PAIRS_CACHE["map_id"] == map_id:
+            return _NR_ALLOWED_PAIRS_CACHE["pairs"]
+
+        allowed_pairs = set()
+
+        for model in (Helix, Junction):
+            rows = (
+                session.query(model.pdb_id, model.chains)
+                .filter(model.pdb_id.isnot(None), model.chains.isnot(None))
+                .distinct()
+                .all()
+            )
+
+            for pdb_id, chains_str in rows:
+                motif_chains = {
+                    chain.strip()
+                    for chain in str(chains_str).split("-")
+                    if chain.strip()
+                }
+                if not motif_chains:
+                    continue
+
+                representative_groups = nr_map.get(str(pdb_id).upper(), [])
+                if any(
+                    motif_chains.issubset(rep_group)
+                    for rep_group in representative_groups
+                ):
+                    allowed_pairs.add((str(pdb_id).upper(), str(chains_str)))
+
+        result = frozenset(allowed_pairs)
+        _NR_ALLOWED_PAIRS_CACHE["map_id"] = map_id
+        _NR_ALLOWED_PAIRS_CACHE["pairs"] = result
+        return result
 
 def get_non_redundant_map() -> Dict[str, List[Set[str]]]:
     """
@@ -54,6 +122,24 @@ def get_non_redundant_map() -> Dict[str, List[Set[str]]]:
         with urllib.request.urlopen(ver_url, timeout=10) as resp:
             ver_data = json.loads(resp.read().decode("utf-8"))
         bgsu_ver = ver_data.get("bgsu_ver", "").replace(".", "_")
+        
+        if bgsu_ver and os.path.exists(NR_CACHE_FILE):
+            try:
+                with open(NR_CACHE_FILE, "r") as f:
+                    cached = json.load(f)
+
+                if cached.get("bgsu_ver") == bgsu_ver:
+                    raw_map = cached.get("map", {})
+                    nr_map = {
+                        k: [set(chains) for chains in groups]
+                        for k, groups in raw_map.items()
+                    }
+                    if nr_map:
+                        _nr_memory_cache["data"] = nr_map
+                        _nr_memory_cache["timestamp"] = now
+                        return nr_map
+            except Exception:
+                pass
 
         if bgsu_ver:
             txt_url = f"https://rnasolo.cs.put.poznan.pl/media/files/bunches/BGSU__R__All__All__1000_0__txt_{bgsu_ver}.txt"
@@ -316,10 +402,9 @@ def apply_filters(h_q, j_q, filters: Dict[str, Any]):
 
     search_pdb = filters.get("search_pdb")
     if search_pdb:
-        h_q, j_q = (
-            h_q.filter(Helix.pdb_id.like(f"%{search_pdb}")),
-            j_q.filter(Junction.pdb_id.like(f"%{search_pdb}")),
-        )
+        pdb_id = search_pdb.strip().upper()
+        h_q = h_q.filter(func.upper(Helix.pdb_id) == pdb_id)
+        j_q = j_q.filter(func.upper(Junction.pdb_id) == pdb_id)
 
     sequence = filters.get("sequence")
     if sequence:
@@ -342,35 +427,51 @@ def apply_filters(h_q, j_q, filters: Dict[str, Any]):
     s1, s2 = filters.get("stacking_stem1"), filters.get("stacking_stem2")
     if s1 or s2:
         h_q = h_q.filter(Helix.id < 0)
-        if s1:
-            j_q = j_q.filter(Junction.coaxial_pairs.contains(f'"{s1.lower()}"'))
-        if s2:
-            j_q = j_q.filter(Junction.coaxial_pairs.contains(f'"{s2.lower()}"'))
 
-    if filters.get("non_redundant"):
-        nr_map = get_non_redundant_map()
-        if nr_map:
-            h_q = h_q.filter(Helix.pdb_id.in_(nr_map.keys()))
-            j_q = j_q.filter(Junction.pdb_id.in_(nr_map.keys()))
+        stem1 = s1.strip().lower() if s1 else None
+        stem2 = s2.strip().lower() if s2 else None
 
-            valid_h_pairs = set()
-            for pid, ch_str in h_q.with_entities(Helix.pdb_id, Helix.chains).distinct().all():
-                if not ch_str:
-                    continue
-                motif_chains = set(ch_str.split("-"))
-                if any(motif_chains.issubset(rep_set) for rep_set in nr_map.get(pid, [])):
-                    valid_h_pairs.add((pid, ch_str))
+        matching_ids = []
+        rows = j_q.with_entities(Junction.id, Junction.coaxial_pairs).all()
 
-            valid_j_pairs = set()
-            for pid, ch_str in j_q.with_entities(Junction.pdb_id, Junction.chains).distinct().all():
-                if not ch_str:
-                    continue
-                motif_chains = set(ch_str.split("-"))
-                if any(motif_chains.issubset(rep_set) for rep_set in nr_map.get(pid, [])):
-                    valid_j_pairs.add((pid, ch_str))
+        for junction_id, raw_pairs in rows:
+            try:
+                pairs = (
+                    json.loads(raw_pairs)
+                    if isinstance(raw_pairs, str)
+                    else raw_pairs
+                )
+            except (TypeError, json.JSONDecodeError):
+                continue
 
-            h_q = h_q.filter(tuple_(Helix.pdb_id, Helix.chains).in_(valid_h_pairs)) if valid_h_pairs else h_q.filter(Helix.id < 0)
-            j_q = j_q.filter(tuple_(Junction.pdb_id, Junction.chains).in_(valid_j_pairs)) if valid_j_pairs else j_q.filter(Junction.id < 0)
+            if not isinstance(pairs, list):
+                continue
+
+            normalized_pairs = [
+                [str(stem).strip().lower() for stem in pair]
+                for pair in pairs
+                if isinstance(pair, list)
+            ]
+
+            if stem1 and stem2:
+                matches = any(
+                    len(pair) == 2 and set(pair) == {stem1, stem2}
+                    for pair in normalized_pairs
+                )
+            else:
+                selected_stem = stem1 or stem2
+                matches = any(
+                    selected_stem in pair for pair in normalized_pairs
+                )
+
+            if matches:
+                matching_ids.append(junction_id)
+
+        j_q = j_q.filter(Junction.id.in_(matching_ids))
+
+    dataset = "rnasolo" if filters.get("non_redundant") else "pdb"
+    h_q = h_q.filter(Helix.dataset == dataset)
+    j_q = j_q.filter(Junction.dataset == dataset)
 
     return h_q, j_q
 
@@ -615,9 +716,16 @@ async def download_zip(file_paths: List[str]):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for path in file_paths:
-            full_path = os.path.join(os.getcwd(), path)
-            if os.path.exists(full_path):
-                zip_file.write(full_path, os.path.basename(full_path))
+            try:
+                full_path = resolve_output_file(path)
+            except HTTPException:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Files must be inside the configured results directory.",
+                )
+
+            if full_path.is_file():
+                zip_file.write(full_path, full_path.name)
 
     zip_buffer.seek(0)
     return StreamingResponse(
@@ -673,9 +781,13 @@ async def export_zip(
             for r in results:
                 for path in r:
                     if path:
-                        full_path = os.path.join(os.getcwd(), path)
-                        if os.path.exists(full_path):
-                            zip_file.write(full_path, os.path.basename(full_path))
+                        try:
+                            full_path = resolve_output_file(path)
+                        except HTTPException:
+                            continue
+
+                        if full_path.is_file():
+                            zip_file.write(full_path, full_path.name)
 
         zip_buffer.seek(0)
         return StreamingResponse(
@@ -687,66 +799,94 @@ async def export_zip(
         )
 
 
-@app.get("/api/stats")
-async def get_global_stats():
-    """Returns global database statistics for frontend initialization."""
-    with SessionLocal() as session:
-        max_nt_h = session.query(func.max(Helix.total_nt)).scalar() or 0
-        max_nt_j = session.query(func.max(Junction.total_nt)).scalar() or 0
-        h_folders = session.query(Helix.segment_count_folder).distinct().all()
-        j_folders = session.query(Junction.segment_count_folder).distinct().all()
-        all_folders = set()
-        for (f,) in h_folders:
-            if f: all_folders.add(f)
-        max_way = 0
-        for (f,) in j_folders:
-            if f:
-                all_folders.add(f)
-                try:
-                    if "way" in f:
-                        val = int(f.split("-")[0])
-                        if val > max_way:
-                            max_way = val
-                except Exception:
-                    pass
 
-        all_methods = set()
-        for (m,) in session.query(Helix.method).distinct().all() + session.query(Junction.method).distinct().all():
-            if m: all_methods.add(m)
+@app.get("/api/stats")
+async def get_global_stats(
+    non_redundant: bool = Query(False),
+):
+    """Returns statistics for the selected dataset."""
+    dataset = "rnasolo" if non_redundant else "pdb"
+
+    with SessionLocal() as session:
+        h_q = session.query(Helix).filter(Helix.dataset == dataset)
+        j_q = session.query(Junction).filter(Junction.dataset == dataset)
+
+        max_nt_h = h_q.with_entities(func.max(Helix.total_nt)).scalar() or 0
+        max_nt_j = j_q.with_entities(func.max(Junction.total_nt)).scalar() or 0
+
+        h_folders = h_q.with_entities(Helix.segment_count_folder).distinct().all()
+        j_folders = j_q.with_entities(Junction.segment_count_folder).distinct().all()
+
+        all_folders = set()
+        for (folder,) in h_folders + j_folders:
+            if folder:
+                all_folders.add(folder)
+
+        max_way = 0
+        for folder in all_folders:
+            try:
+                if "way" in folder:
+                    val = int(folder.split("-")[0])
+                    max_way = max(max_way, val)
+            except Exception:
+                pass
+
+        h_methods = h_q.with_entities(Helix.method).distinct().all()
+        j_methods = j_q.with_entities(Junction.method).distinct().all()
+        all_methods = {
+            method
+            for (method,) in h_methods + j_methods
+            if method
+        }
 
         return {
-            "max_nt": max(max_nt_h, max_nt_j), 
+            "max_nt": max(max_nt_h, max_nt_j),
             "max_way": max_way,
-            "folders": sorted(list(all_folders)),
-            "methods": sorted(list(all_methods))
+            "folders": sorted(all_folders),
+            "methods": sorted(all_methods),
         }
 
 @app.get("/api/ids")
-async def get_all_ids():
-    """Returns a sorted list of all unique PDB IDs present in the database."""
-    with SessionLocal() as session:
-        ids = (
-            session.query(Helix.pdb_id).distinct().all()
-            + session.query(Junction.pdb_id).distinct().all()
-        )
-        return sorted(list(set([r[0] for r in ids if r[0]])))
+async def get_all_ids(
+    non_redundant: bool = Query(False),
+):
+    """Returns IDs from the selected dataset."""
+    dataset = "rnasolo" if non_redundant else "pdb"
 
+    with SessionLocal() as session:
+        helix_ids = (
+            session.query(Helix.pdb_id)
+            .filter(Helix.dataset == dataset)
+            .distinct()
+            .all()
+        )
+        junction_ids = (
+            session.query(Junction.pdb_id)
+            .filter(Junction.dataset == dataset)
+            .distinct()
+            .all()
+        )
+
+        return sorted({
+            row[0]
+            for row in helix_ids + junction_ids
+            if row[0]
+        })
 
 @app.get("/api/files/{file_path:path}")
 async def get_file(file_path: str):
-    """Serves static files (JSON, SVG, CIF, PML) from the local filesystem."""
-    path = os.path.join(os.getcwd(), file_path)
-    if os.path.exists(path):
+    path = resolve_output_file(file_path)
+    if path.is_file():
         mime = (
             "application/json"
-            if path.endswith(".json")
+            if path.suffix.lower() == ".json"
             else "image/svg+xml"
-            if path.endswith(".svg")
+            if path.suffix.lower() == ".svg"
             else "application/octet-stream"
         )
-        return FileResponse(path, media_type=mime)
-    raise HTTPException(status_code=404)
+        return FileResponse(str(path), media_type=mime)
 
+    raise HTTPException(status_code=404)
 
 if os.path.exists("dist"):
     app.mount("/", StaticFiles(directory="dist", html=True), name="static")

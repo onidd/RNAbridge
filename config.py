@@ -6,11 +6,14 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.absolute()
 
 # Data Directories
-CIF_DIR = Path(os.environ.get("RNABRIDGE_CIF_DIR", BASE_DIR / "cif"))
-JSON_DIR = Path(os.environ.get("RNABRIDGE_JSON_DIR", BASE_DIR / "json"))
-RESULTS_DIR = Path(os.environ.get("RNABRIDGE_RESULTS_DIR", BASE_DIR / "analyze"))
-INPUT_DIR = RESULTS_DIR  # Alias for categorization input
-OUTPUT_DIR = Path(os.environ.get("RNABRIDGE_OUTPUT_DIR", BASE_DIR / "result"))
+DATASET = os.environ.get("RNABRIDGE_DATASET", "pdb").lower()
+DATA_DIR = BASE_DIR / "rnasolo" if DATASET == "rnasolo" else BASE_DIR
+
+CIF_DIR = Path(os.environ.get("RNABRIDGE_CIF_DIR", DATA_DIR / "cif"))
+JSON_DIR = Path(os.environ.get("RNABRIDGE_JSON_DIR", DATA_DIR / "json"))
+RESULTS_DIR = Path(os.environ.get("RNABRIDGE_RESULTS_DIR", DATA_DIR / "analyze"))
+INPUT_DIR = RESULTS_DIR
+OUTPUT_DIR = Path(os.environ.get("RNABRIDGE_OUTPUT_DIR", DATA_DIR / "result"))
 
 # Ensure directories exist
 for d in [CIF_DIR, JSON_DIR, RESULTS_DIR, OUTPUT_DIR]:

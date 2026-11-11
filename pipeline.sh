@@ -27,11 +27,10 @@ echo "Configuration: CIF=$input_cif_dir, JSON=$output_json, HELICES=$output_heli
 # --- STEP 0: WAIT FOR DATABASE ---
 if [[ "$DATABASE_URL" == *"postgresql"* ]]; then
     echo "--- STEP 0: Waiting for PostgreSQL... ---"
-    # Extract host and port from URL
-    db_host=$(echo $DATABASE_URL | sed -e 's|.*@||' -e 's|/.*||' -e 's|:.*||')
-    db_port=$(echo $DATABASE_URL | sed -e 's|.*:||' -e 's|/.*||')
-    [[ -z "$db_port" ]] && db_port=5432
-    
+    # Parse host and port from DATABASE_URL
+    db_host=$($PY -c 'import os; from sqlalchemy.engine import make_url; u = make_url(os.environ["DATABASE_URL"]); print(u.host or "localhost")')
+    db_port=$($PY -c 'import os; from sqlalchemy.engine import make_url; u = make_url(os.environ["DATABASE_URL"]); print(u.port or 5432)')
+
     until printf "" 2>>/dev/null >>/dev/tcp/$db_host/$db_port; do
         echo "Postgres is unavailable - sleeping"
         sleep 2

@@ -101,11 +101,18 @@ const HelpPage: React.FC = () => (
           </Paragraph>
           <ul style={{ marginBottom: 24 }}>
             <li><strong>CIF ID:</strong> Search for specific structures using their 4-character identifier.</li>
-            <li><strong>Sequence Pattern:</strong> Find motifs containing specific nucleotide sequences (supports A, C, G, U).</li>
+	    <li>
+  <strong>Experimental Method:</strong> Filter structures by the method used
+  to determine them, such as X-ray crystallography, NMR, or electron microscopy.
+</li>
+            <li>
+  <strong>Non-redundant dataset:</strong> Select “Non-redundant only (RNAsolo)” to search the non-redundant RNA dataset. Clear the checkbox to search the full PDB dataset.
+	    </li>
+	    <li><strong>Sequence Pattern:</strong> Find elements containing specific nucleotide sequences (supports A, C, G, U).</li>
             <li><strong>Type:</strong> Filter by complexity, ranging from simple helices to multi-way junctions (up to 8+ way).</li>
             <li><strong>Coaxially Stacked:</strong> Filter junctions by identifying specific pairs of stems (e.g., Stem 1 and Stem 3) that exhibit coaxial stacking.</li>
-            <li><strong>Angle (0-50°):</strong> Filter structures based on their global curvature, which often indicates functional strain.</li>
-            <li><strong>NT Range:</strong> Limit results by the total number of nucleotides within the identified motif.</li>
+            <li><strong>Angle [0-50°]:</strong> Filter structures based on their global curvature, which often indicates functional strain.</li>
+            <li><strong>NT Range:</strong> Limit results by the total number of nucleotides within the identified element.</li>
           </ul>
           <Image 
             src="/guide/search_panel.png" 
@@ -124,7 +131,7 @@ const HelpPage: React.FC = () => (
         <div id="stats" style={{ marginBottom: 60 }}>
           <Title level={4}><BulbOutlined /> 2. Statistics Dashboard</Title>
           <Paragraph>
-            The dashboard provides a high-level overview of your current search results, allowing you to quickly assess the distribution and composition of the identified motifs:
+            The dashboard provides a high-level overview of your current search results, allowing you to quickly assess the distribution and composition of the identified elements:
           </Paragraph>
 
           <Row gutter={[16, 16]}>
@@ -141,7 +148,7 @@ const HelpPage: React.FC = () => (
             </Col>
             <Col xs={24} md={16}>
               <Card title="Bend Angle Distribution" size="small" type="inner" style={{ height: '100%' }}>
-                <Paragraph>A bar chart showing how motifs are distributed across different bend angle ranges (0° to 50°). <strong>Hover over any bar</strong> to see the exact count, or <strong>click a bar</strong> to instantly filter the results to that specific angle range.</Paragraph>
+                <Paragraph>A bar chart showing how elements are distributed across different bend angle ranges [0° to 50°]. <strong>Hover over any bar</strong> to see the exact count, or <strong>click a bar</strong> to instantly filter the results to that specific angle range.</Paragraph>
                 <Image 
                   src="/guide/stats_histogram.png" 
                   alt="Angle distribution"
@@ -152,7 +159,7 @@ const HelpPage: React.FC = () => (
             </Col>
             <Col span={24}>
               <Card title="Composition Analysis" size="small" type="inner">
-                <Paragraph>A pie chart representing the proportion of different motif types (Helices vs. various Junctions) in your selection. <strong>Hover over a slice</strong> to view the precise count for that specific motif type.</Paragraph>
+                <Paragraph>A pie chart representing the proportion of different element types (Helices vs. various Junctions) in your selection. <strong>Hover over a slice</strong> to view the precise count for that specific element type.</Paragraph>
                 <div style={{ textAlign: 'center' }}>
                   <Image 
                     src="/guide/stats_pie.png" 
@@ -175,16 +182,16 @@ const HelpPage: React.FC = () => (
         <div id="table" style={{ marginBottom: 60 }}>
           <Title level={4}><FileTextOutlined /> 3. Result Analysis</Title>
           <Paragraph>
-            The results table displays all identified motifs matching your search criteria. Each row provides a summary of the structural data:
+            The results table displays all identified elements matching your search criteria. Each row provides a summary of the structural data:
           </Paragraph>
           <ul style={{ marginBottom: 24 }}>
             <li><strong>CIF ID:</strong> The 4-character PDB entry identifier (e.g., <Tag color="blue">8XTP</Tag>). Clicking it opens the original RCSB PDB page.</li>
             <li><strong>Source / Molecule:</strong> Displays the name of the molecule and the organism from which the RNA was derived.</li>
             <li><strong>Method:</strong> The experimental technique used to determine the structure (e.g., X-ray Diffraction, Cryo-EM).</li>
             <li><strong>Res. (Å):</strong> The experimental resolution of the structure in Angstroms. Lower values indicate higher detail.</li>
-            <li><strong>Nts Count:</strong> Total number of nucleotides contained within the identified motif.</li>
-            <li><strong>Bend Angle (°):</strong> The global curvature of the motif. High angles indicate sharp structural bends.</li>
-            <li><strong>Type:</strong> Categorizes the motif as either a <strong>HELIX</strong> or a <strong>JUNCTION</strong>, along with its specific segment count.</li>
+            <li><strong>Nts Count:</strong> Total number of nucleotides contained within the identified element.</li>
+            <li><strong>Bend Angle (°):</strong> The global curvature of the element. High angles indicate sharp structural bends.</li>
+            <li><strong>Type:</strong> Categorizes the element as either a <strong>HELIX</strong> or a <strong>JUNCTION</strong>, along with its specific segment count.</li>
             <li><strong>Visualization:</strong> Quick access to the <strong>Preview</strong> button, which opens the integrated 2D/3D structure viewer.</li>
             <li><strong>Download:</strong> Each row contains direct links to download the <strong>CIF</strong> (3D coordinates) and <strong>PML</strong> (PyMOL visualization script) files.</li>
           </ul>
@@ -254,12 +261,12 @@ const HelpPage: React.FC = () => (
         <div id="viewer" style={{ marginBottom: 60 }}>
           <Title level={4}><EyeOutlined /> 4. Integrated Structural Preview (3D & 2D)</Title>
           <Paragraph>
-            The <strong>Structure Preview</strong> tool provides a synchronized side-by-side view of the identified motif, bridging secondary topology with tertiary geometry.
+            The <strong>Structure Preview</strong> tool provides a synchronized side-by-side view of the identified element, bridging secondary topology with tertiary geometry.
           </Paragraph>
 
           <Card size="small" type="inner" style={{ borderRadius: '8px' }}>
             <ul style={{ marginBottom: 16 }}>
-              <li><strong>2D Schematic:</strong> An interactive diagram displaying base-pairing and connectivity. Loop core strands and motifs are color-coded using distinct vibrant palettes.</li>
+              <li><strong>2D Schematic:</strong> An interactive diagram displaying base-pairing and connectivity. Loop core strands and elements are color-coded using distinct vibrant palettes.</li>
               <li><strong>3D Model (Mol*):</strong> A full spatial representation, perfectly synchronized with the 2D view. Components use the same colors, allowing for instant identification of structural features.</li>
               <li><strong>Component Legend:</strong> A comprehensive legend displayed below the viewers, showing both the Helix and Junction palettes simultaneously for easy reference.</li>
             </ul>
@@ -325,12 +332,26 @@ const HelpPage: React.FC = () => (
                 title: 'Reference / DOI',
                 dataIndex: 'reference',
                 key: 'reference',
-                render: (text, record) => (
-                  <a href={record.doi} target="_blank" rel="noopener noreferrer">
-                    {text}
-                  </a>
-                )
-              }
+              	render: (text, record) => (
+  <div>
+    <a href={record.doi} target="_blank" rel="noopener noreferrer">
+      {text}
+    </a>
+    {record.customizedFork && (
+      <div style={{ marginTop: 4 }}>
+        RNAbridge uses a customized VARNA fork with additional functionality.{' '}
+        <a
+          href={record.customizedFork}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View the fork on GitHub
+        </a>
+      </div>
+    )}
+  </div>
+)
+	      }
             ]}
             dataSource={[
               {
@@ -341,13 +362,14 @@ const HelpPage: React.FC = () => (
                 doi: 'https://doi.org/10.1038/nprot.2008.104'
               },
               {
-                key: '2',
-                tool: 'VARNA',
-                version: '3.93',
-                reference: '"VARNA: Interactive Drawing and Editing of the RNA Secondary Structure"',
-                doi: 'https://doi.org/10.1093/bioinformatics/btp250'
-              },
-              {
+  key: '2',
+  tool: 'VARNA',
+  version: '3.93',
+  reference: '"VARNA: Interactive Drawing and Editing of the RNA Secondary Structure"',
+  doi: 'https://doi.org/10.1093/bioinformatics/btp250',
+  customizedFork: 'https://github.com/tzok/varna-tz'
+},
+	      {
                 key: '3',
                 tool: 'Mol*',
                 version: '3.x',
@@ -371,7 +393,39 @@ const HelpPage: React.FC = () => (
             ]}
           />
         </div>
+	
+	 <Divider />
 
+        <div id="technical-support" style={{ marginBottom: 24 }}>
+          <Title level={4}>
+            <QuestionCircleOutlined /> Technical Support
+          </Title>
+          <Paragraph>
+  RNAbridge is open-source software distributed under the MIT License.
+  The source code is publicly available on{' '}
+  <a
+    href="https://github.com/onidd/RNAbridge"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    GitHub
+  </a>.
+</Paragraph>
+<Paragraph>
+  For technical support, bug reports, or questions about using RNAbridge,
+  please open an issue on GitHub:
+</Paragraph>
+<Paragraph>  
+	  <Button
+              type="primary"
+              href="https://github.com/onidd/RNAbridge/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open a GitHub issue
+            </Button>
+          </Paragraph>
+        </div>
 
       </Card>
     </Col>
@@ -411,14 +465,19 @@ const AboutPage: React.FC = () => (
 
         <Divider />
 
-        <section style={{ marginBottom: '40px' }}>
+<section style={{ marginBottom: '40px' }}>
           <Title level={4}>Research Team</Title>
           <ul style={{ lineHeight: '2' }}>
             <li><a href="https://www.linkedin.com/in/damian-zakrzewski2004/" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>Damian Zakrzewski</a></li>
             <li>Tomasz Zok</li>
             <li>Maciej Antczak</li>
           </ul>
-        </section>
+          <Paragraph>
+            This work is supported by funds from the National Science Center, Poland
+            [2023/51/D/ST6/01207 to TZ] and statutory funds of the Institute of
+            Computing Science, Poznan University of Technology.
+          </Paragraph>
+        </section>	
 
         <Divider />
 
@@ -437,9 +496,19 @@ const AboutPage: React.FC = () => (
 
 const CitePage: React.FC = () => (
   <Card title={<span><BookOutlined /> Cite Us</span>} style={{ borderRadius: '8px' }}>
-    <Typography>
-      <Paragraph>Citation information will be available soon.</Paragraph>
-    </Typography>
+  	<Typography>
+  <Paragraph>
+    Zakrzewski D, Antczak M, Zok T. RNAbridge: a database of extended
+    non-canonical helices. Preprint.{' '}
+    <a
+      href="https://doi.org/10.64898/2026.09.15.751775"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      https://doi.org/10.64898/2026.09.15.751775
+    </a>
+  </Paragraph>
+</Typography>
   </Card>
 );
 
@@ -618,7 +687,12 @@ const App: React.FC = () => {
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
       
-      if (rest.non_redundant) params.append('non_redundant', 'true');
+      const nonRedundant =
+  	rest.non_redundant ??
+  	form.getFieldValue('non_redundant') ??
+  	true;
+
+      params.append('non_redundant', String(nonRedundant));	
 
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
@@ -672,8 +746,13 @@ const App: React.FC = () => {
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
       
-      if (rest.non_redundant) params.append('non_redundant', 'true');
-      
+      const nonRedundant =
+  	rest.non_redundant ??
+  	form.getFieldValue('non_redundant') ??
+  	true;
+
+      params.append('non_redundant', String(nonRedundant)); 
+
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
       }
@@ -744,8 +823,13 @@ const App: React.FC = () => {
       if (rest.stacking_stem1) params.append('stacking_stem1', rest.stacking_stem1);
       if (rest.stacking_stem2) params.append('stacking_stem2', rest.stacking_stem2);
       
-      if (rest.non_redundant) params.append('non_redundant', 'true');
-      
+      const nonRedundant =
+  	rest.non_redundant ??
+  	form.getFieldValue('non_redundant') ??
+  	true;
+
+      params.append('non_redundant', String(nonRedundant));
+
       if (rest.segment_type && Array.isArray(rest.segment_type)) {
         rest.segment_type.forEach((t: string) => params.append('segment_type', t));
       }
@@ -784,18 +868,22 @@ const App: React.FC = () => {
     message.success('CSV file downloaded successfully.');
   };
 
-  const fetchIds = async () => {
+  const fetchIds = async (nonRedundant: boolean) => {
     try {
-      const response = await axios.get(`${API_BASE}/api/ids`);
+      const response = await axios.get(`${API_BASE}/api/ids`, {
+        params: { non_redundant: nonRedundant }
+      });
       setAvailableIds(response.data);
     } catch (error) {
       console.error('Error fetching IDs:', error);
     }
   };
 
-  const fetchStats = async () => {
+  const fetchStats = async (nonRedundant: boolean): Promise<number | null> => {  
     try {
-      const response = await axios.get(`${API_BASE}/api/stats`);
+      const response = await axios.get(`${API_BASE}/api/stats`, {
+      params: { non_redundant: nonRedundant }
+	});
       const maxVal = response.data.max_nt;
       const maxWay = response.data.max_way || 0;
       const folders = response.data.folders || []; 
@@ -837,8 +925,10 @@ const App: React.FC = () => {
         .map(item => ({ value: item.value, label: item.label }));
         
       setAvailableTypes(types);  
+      return maxVal;
     } catch (error) {
       console.error('Error fetching stats:', error);
+      return null;
     }
   }; 
   const getGroupForType = (folderName: string) => {
@@ -936,14 +1026,14 @@ const App: React.FC = () => {
   const PIE_COLORS = ['#13c2c2', '#52c41a', '#237804', '#1890ff', '#722ed1', '#eb2f96', '#faad14'];
 
   useEffect(() => {
-    fetchIds();
-    fetchStats();
-    onSearch({});
+    fetchIds(true);
+    fetchStats(true);
+    onSearch({ non_redundant: true });;
   }, []);
 
   const clearFilters = () => {
     form.resetFields();
-    onSearch({}, 1, 10, 'reset');
+    onSearch(form.getFieldsValue(), 1, 10, 'reset');
   };
 
   const runExample = (params: any) => {
@@ -1398,7 +1488,7 @@ const App: React.FC = () => {
                 <Card style={{ borderRadius: '8px' }}>
                   <Title level={4}>About RNAbridge</Title>
                   <Text style={{ fontSize: '16px' }}>
-                    RNAbridge is a specialized platform designed for the identification and analysis of RNA structural motifs, focusing on helices and junctions. It enables researchers to explore complex RNA architectures, identify coaxial stacking patterns, and access detailed geometric data for various RNA segments to support structural biology research.
+                    RNAbridge is a specialized platform designed for the identification and analysis of RNA structural elements, focusing on helices and junctions. It enables researchers to explore complex RNA architectures, identify coaxial stacking patterns, and access detailed geometric data for various RNA segments to support structural biology research.
                   </Text>
                 </Card>
               </Col>
@@ -1435,12 +1525,33 @@ const App: React.FC = () => {
               <Form
                 form={form}
                 layout="vertical"
-                onValuesChange={(changedValues, allValues) => {
-                  // Jeśli zmieniła się tylko sekwencja, nie szukaj automatycznie
-                  if (Object.keys(changedValues).length === 1 && 'sequence' in changedValues) {
+		initialValues={{ non_redundant: true }}
+                onValuesChange={async (changedValues, allValues) => {
+  if ('non_redundant' in changedValues) {
+    const selectedDataset = Boolean(allValues.non_redundant);
+
+    void fetchIds(selectedDataset);
+
+    const maxNt = await fetchStats(selectedDataset);
+    if (maxNt === null) return;
+
+    const ntRange: [number, number] = [0, maxNt];
+    form.setFieldsValue({ nt_range: ntRange });
+
+    onSearch(
+      {
+        ...form.getFieldsValue(),
+        non_redundant: selectedDataset,
+        nt_range: ntRange,
+      },
+      1,
+      10
+    );
+    return;
+  }  
+		if (Object.keys(changedValues).length === 1 && 'sequence' in changedValues) {
                     return;
                   }
-                  // Jeśli zmieniły się suwaki, czekamy na onAfterChange, aby nie przeciążać bazy
                   if ('angle_range' in changedValues || 'nt_range' in changedValues) {
                     return;
                   }
@@ -1752,7 +1863,7 @@ const App: React.FC = () => {
     </Routes>
   </Content>
       <Footer style={{ textAlign: 'center', color: '#888', background: '#fff', borderTop: '1px solid #e8e8e8' }}>
-        <strong>RNAbridge</strong> ©2026 | System for local RNA geometry analysis
+        <strong>RNAbridge</strong> ©2026 
       </Footer>
 
       <style>{`

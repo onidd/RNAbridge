@@ -334,7 +334,7 @@ def main():
                 accepted = (m_type == "HAIRPIN" and st_stat == "FULL") or (
                     m_type != "HAIRPIN"
                     and loc_angle is not None
-                    and loc_angle < max_angle_limit
+                    and loc_angle <= max_angle_limit
                 )
                 log = {
                     "step": step,
@@ -379,7 +379,7 @@ def main():
                     cur_comps, cur_hist, step = [], [], 1
                 continue
 
-            if loc_angle is None or loc_angle >= max_angle_limit:
+            if loc_angle is None or loc_angle > max_angle_limit:
                 cur_hist.append(
                     {
                         "step": step,
@@ -408,7 +408,7 @@ def main():
                 },
             }
 
-            if glob_angle is None or glob_angle >= max_angle_limit:
+            if glob_angle is None or glob_angle > max_angle_limit:
                 log["status"] = "REJECTED_GLOBAL_BEND_ANGLE"
                 cur_hist.append(log)
                 final_helices.append({"components": cur_comps, "history": cur_hist})

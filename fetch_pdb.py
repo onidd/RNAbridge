@@ -1,6 +1,6 @@
 import sys
 from rnabridge import PDBDownloader
-from config import CIF_DIR, JSON_DIR, RESULTS_DIR, OUTPUT_DIR
+from config import CIF_DIR, JSON_DIR, RESULTS_DIR, OUTPUT_DIR, DATASET
 
 MAX_SAFE_DELETE = 100       
 MIN_EXPECTED_ACTIVE_IDS = 5000  
@@ -14,6 +14,12 @@ def sync_pdb_data():
     3. Downloads missing CIF files.
     """
     print("--- STARTING PDB SYNCHRONIZATION ---")
+    if DATASET == "rnasolo":
+        print(
+            "[INFO] RNAsolo dataset selected. "
+            "Skipping RCSB PDB synchronization; no files were changed."
+        )
+        return
     active_ids = PDBDownloader.get_active_rna_ids()
     if not active_ids or len(active_ids) < MIN_EXPECTED_ACTIVE_IDS:
         print(
