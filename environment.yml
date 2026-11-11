@@ -20,4 +20,5 @@ dependencies:
       - python-multipart
       - rnapolis
       - psycopg2-binary
+      - psycopg[binary]
       - cli2rest-bio @ git+https://github.com/tzok/cli2rest-bio
